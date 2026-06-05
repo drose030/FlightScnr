@@ -126,7 +126,7 @@ If upload fails, hold the board **BOOT** button (not the knob), tap reset, and r
 
 ## Releases
 
-Each push to **`main`** automatically builds firmware and publishes a GitHub Release named **`Release YY.M.D.N`** (UTC date + daily build number). Example: **`Release 26.6.5.1`** = 2026-06-05, 1st release that day; the next push the same day becomes **`Release 26.6.5.2`**. You can also run **Actions → Release → Run workflow** or push a matching tag (e.g. `26.6.5.3`).
+Each push to **`master`** automatically builds firmware and publishes a GitHub Release named **`Release YY.M.D.N`** (UTC date + daily build number). Example: **`Release 26.6.5.1`** = 2026-06-05, 1st release that day; the next push the same day becomes **`Release 26.6.5.2`**. You can also run **Actions → Release → Run workflow** or push a matching tag (e.g. `26.6.5.3`).
 
 Add `[skip release]` anywhere in a commit message to push without creating a release (docs-only changes, etc.).
 
@@ -148,7 +148,7 @@ The WebFlasher **Install** button always pulls the latest release from GitHub.
 2. Open WebFlasher, click **Connect USB**, then **Flash latest release** (or upload a downloaded `.bin`).
 3. If needed, hold **BOOT** while connecting.
 
-WebFlasher is deployed from the `webflasher/` folder when changes land on `main`. In repo **Settings → Pages**, set source to **GitHub Actions** if the site is not live yet.
+WebFlasher is deployed from the `webflasher/` folder when changes land on **`master`**. In repo **Settings → Pages → Build and deployment**, set **Source** to **GitHub Actions** (required once; without this the site stays 404).
 
 ## Configuration
 

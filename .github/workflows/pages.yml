@@ -3,10 +3,8 @@ name: Deploy WebFlasher
 on:
   push:
     branches:
+      - master
       - main
-    paths:
-      - "webflasher/**"
-      - ".github/workflows/pages.yml"
   workflow_dispatch:
 
 permissions:
