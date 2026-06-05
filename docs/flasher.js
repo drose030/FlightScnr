@@ -2,7 +2,7 @@ import { ESPLoader, Transport } from "./vendor/esptool-js.bundle.js";
 
 const REPO = "yashmulgaonkar/FlightScnr";
 const MERGED_ASSET = "FlightScnr-tencoder-pro-merged.bin";
-const LATEST_URL = `https://github.com/${REPO}/releases/latest/download/${MERGED_ASSET}`;
+const RELEASES_API = `https://api.github.com/repos/${REPO}/releases/latest`;
 
 const els = {
   connectBtn: document.getElementById("connect-btn"),
@@ -61,13 +61,17 @@ function clearProgress() {
   els.progressLabel.textContent = "";
 }
 
+async function fetchLatestRelease() {
+  const resp = await fetch(RELEASES_API);
+  if (!resp.ok) {
+    throw new Error(`Release lookup failed (HTTP ${resp.status})`);
+  }
+  return resp.json();
+}
+
 async function loadLatestReleaseMeta() {
   try {
-    const resp = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`);
-    if (!resp.ok) {
-      throw new Error(`HTTP ${resp.status}`);
-    }
-    const data = await resp.json();
+    const data = await fetchLatestRelease();
     const asset = (data.assets || []).find((a) => a.name === MERGED_ASSET);
     const sizeMb = asset ? (asset.size / (1024 * 1024)).toFixed(2) : "?";
     els.releaseMeta.textContent = `Latest: ${data.name || data.tag_name} (${sizeMb} MB)`;
@@ -75,6 +79,29 @@ async function loadLatestReleaseMeta() {
     els.releaseMeta.textContent = "Latest release info unavailable (you can still upload a .bin file).";
     console.warn(err);
   }
+}
+
+async function fetchLatestMergedFirmware() {
+  const release = await fetchLatestRelease();
+  const asset = (release.assets || []).find((a) => a.name === MERGED_ASSET);
+  if (!asset) {
+    throw new Error(`${MERGED_ASSET} not found on ${release.tag_name}`);
+  }
+
+  log(`Downloading ${release.name || release.tag_name}…`);
+  // github.com release URLs block cross-origin fetch from Pages; API asset URL works.
+  const resp = await fetch(asset.url, {
+    headers: { Accept: "application/octet-stream" },
+  });
+  if (!resp.ok) {
+    throw new Error(`Download failed (HTTP ${resp.status})`);
+  }
+  const buf = await resp.arrayBuffer();
+  if (buf.byteLength === 0) {
+    throw new Error("Downloaded file is empty");
+  }
+  log(`Downloaded ${(buf.byteLength / (1024 * 1024)).toFixed(2)} MB`);
+  return new Uint8Array(buf);
 }
 
 async function connect() {
@@ -132,17 +159,6 @@ async function disconnect() {
   log("Disconnected.");
 }
 
-async function fetchFirmware(url) {
-  log(`Downloading ${url}`);
-  const resp = await fetch(url);
-  if (!resp.ok) {
-    throw new Error(`Download failed (${resp.status})`);
-  }
-  const buf = await resp.arrayBuffer();
-  log(`Downloaded ${(buf.byteLength / (1024 * 1024)).toFixed(2)} MB`);
-  return new Uint8Array(buf);
-}
-
 async function flashBinary(data, label) {
   if (!esploader) {
     throw new Error("Not connected");
@@ -187,7 +203,7 @@ els.connectBtn.addEventListener("click", connect);
 els.disconnectBtn.addEventListener("click", disconnect);
 
 els.flashLatestBtn.addEventListener("click", () => {
-  runFlash(() => fetchFirmware(LATEST_URL), MERGED_ASSET);
+  runFlash(() => fetchLatestMergedFirmware(), MERGED_ASSET);
 });
 
 els.fileInput.addEventListener("change", async () => {
