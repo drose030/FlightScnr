@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>FlightScnr Firmware Installer</title>
+    <meta
+      name="description"
+      content="FlightScnr firmware installer for LilyGO T-Encoder Pro"
+    />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="color-scheme" content="dark light" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="content">
+      <h1>FlightScnr Firmware Installer</h1>
+      <p class="tagline">
+        Installer powered by
+        <a href="https://github.com/espressif/esptool-js">esptool-js</a>.
+      </p>
+
+      <p class="button-row">
+        <button id="connect-btn" type="button">Connect</button>
+        <button id="flash-latest-btn" type="button" disabled>Install</button>
+        <label class="file-btn" for="file-input">Upload .bin</label>
+        <input id="file-input" type="file" accept=".bin,application/octet-stream" />
+        <button id="disconnect-btn" type="button" class="secondary" disabled>
+          Disconnect
+        </button>
+      </p>
+
+      <p class="meta" id="release-meta">Loading latest release&hellip;</p>
+      <p class="status-line"><span id="status">Not connected</span></p>
+
+      <div id="progress-wrap">
+        <progress id="progress" max="100" value="0"></progress>
+        <div id="progress-label"></div>
+      </div>
+
+      <h2>Before you start</h2>
+      <ol class="steps">
+        <li>Use <strong>Chrome</strong> on a desktop computer or laptop.</li>
+        <li>Connect the <a href="https://www.lilygo.cc/zo4apl">LILYGO T-Encoder Pro</a> board to your compter with a USB cable.</li>
+        <li>
+          If the port does not appear, hold <strong>BOOT</strong> button on the back of the board (not the knob), tap the reset button,
+          then connect.
+        </li>
+        <li>
+          Do not hold the knob while plugging in the USB cable - GPIO 0 enters download mode.
+        </li>
+      </ol>
+      <br>
+      <p class="meta">
+        <strong>Install</strong> flashes the latest
+        <code>FlightScnr-tencoder-pro-merged.bin</code> from GitHub Releases at offset
+        <strong>0x0</strong>.
+      </p>
+
+      <h2>Log</h2>
+      <pre id="log"></pre>
+
+      <div class="footer">
+        <a href="https://github.com/yashmulgaonkar/FlightScnr">FlightScnr</a>
+        &middot;
+        <a href="https://github.com/yashmulgaonkar/FlightScnr/releases">Releases</a>
+      </div>
+    </div>
+    <script type="module" src="flasher.js"></script>
+  </body>
+</html>

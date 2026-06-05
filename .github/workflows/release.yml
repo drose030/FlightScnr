@@ -1,0 +1,84 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            tools/.cache
+          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini', 'lib_deps/**/*') }}
+          restore-keys: pio-${{ runner.os }}-
+
+      - name: Install PlatformIO
+        run: pip install platformio
+
+      - name: Build firmware
+        run: |
+          pio run -e tencoder-pro
+          pio run -t merge -e tencoder-pro
+
+      - name: Package release artifacts
+        run: |
+          BUILD=".pio/build/tencoder-pro"
+          OUT="release"
+          mkdir -p "$OUT"
+          cp "$BUILD/firmware-merged.bin" "$OUT/FlightScnr-tencoder-pro-merged.bin"
+          cp "$BUILD/firmware.bin" "$OUT/FlightScnr-tencoder-pro-app.bin"
+          cp "$BUILD/bootloader.bin" "$OUT/bootloader.bin"
+          cp "$BUILD/partitions.bin" "$OUT/partitions.bin"
+          (
+            cd "$OUT"
+            sha256sum *.bin > SHA256SUMS.txt
+          )
+          cat "$OUT/SHA256SUMS.txt"
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            release/FlightScnr-tencoder-pro-merged.bin
+            release/FlightScnr-tencoder-pro-app.bin
+            release/bootloader.bin
+            release/partitions.bin
+            release/SHA256SUMS.txt
+          body: |
+            Firmware for **LilyGO T-Encoder Pro** (ESP32-S3, 16 MB flash).
+
+            ### Web install (recommended)
+            Open the [FlightScnr WebFlasher](https://yashmulgaonkar.github.io/FlightScnr/) in **Chrome** or **Edge**, connect USB, and flash **Latest release** or upload `FlightScnr-tencoder-pro-merged.bin`.
+
+            ### Manual flash
+            Flash the merged image at offset **0x0**:
+            ```bash
+            esptool.py --chip esp32s3 write_flash 0x0 FlightScnr-tencoder-pro-merged.bin
+            ```
+
+            | File | Use |
+            | --- | --- |
+            | `FlightScnr-tencoder-pro-merged.bin` | Full factory image — flash at **0x0** |
+            | `FlightScnr-tencoder-pro-app.bin` | App only — flash at **0x10000** (advanced) |
+            | `bootloader.bin` / `partitions.bin` | Individual components (advanced) |
+            | `SHA256SUMS.txt` | Checksums |
+
+            **Note:** Hold the board **BOOT** button (not the knob) while connecting USB if the port does not appear.

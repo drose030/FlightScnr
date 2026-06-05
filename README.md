@@ -124,6 +124,35 @@ Output: `.pio/build/tencoder-pro/firmware-merged.bin`. Flash at offset **0x0**.
 
 If upload fails, hold the board **BOOT** button (not the knob), tap reset, and retry.
 
+## Releases
+
+Tagged builds are published on [GitHub Releases](https://github.com/yashmulgaonkar/FlightScnr/releases) (e.g. **v1.0.0**). Each release includes:
+
+| File | Purpose |
+| --- | --- |
+| `FlightScnr-tencoder-pro-merged.bin` | Full factory image — flash at **0x0** |
+| `FlightScnr-tencoder-pro-app.bin` | Application only — flash at **0x10000** (advanced) |
+| `SHA256SUMS.txt` | Checksums |
+
+Create a release by pushing a version tag:
+
+```bash
+git tag v1.0.1
+git push origin v1.0.1
+```
+
+GitHub Actions builds the firmware and attaches the binaries automatically.
+
+### WebFlasher (browser install)
+
+**[FlightScnr WebFlasher](https://yashmulgaonkar.github.io/FlightScnr/)** flashes firmware over USB from Chrome or Edge — no PlatformIO required.
+
+1. Connect the T-Encoder Pro via USB.
+2. Open WebFlasher, click **Connect USB**, then **Flash latest release** (or upload a downloaded `.bin`).
+3. If needed, hold **BOOT** while connecting.
+
+WebFlasher is deployed from the `webflasher/` folder when changes land on `main`. In repo **Settings → Pages**, set source to **GitHub Actions** if the site is not live yet.
+
 ## Configuration
 
 ### Route / Airline APIs (optional)
