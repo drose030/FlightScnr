@@ -131,9 +131,19 @@ progress {
   text-align: center;
 }
 
+.log-section {
+  width: min(1100px, calc(100vw - 24px));
+  margin-left: 50%;
+  transform: translateX(-50%);
+}
+
+.log-section h2 {
+  margin-top: 2em;
+}
+
 .content pre {
   max-width: 100%;
-  overflow-y: auto;
+  overflow: auto;
   margin: 0;
   padding: 12px;
   border: 1px solid #ccc;

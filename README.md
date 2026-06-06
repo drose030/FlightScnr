@@ -142,7 +142,7 @@ Published builds: [GitHub Releases](https://github.com/yashmulgaonkar/FlightScnr
 
 The WebFlasher **Install** button always pulls the latest release from GitHub.
 
-**[FlightScnr WebFlasher](https://yashmulgaonkar.github.io/FlightScnr/)** flashes firmware over USB from Chrome or Edge — no PlatformIO required.
+**[FlightScnr WebFlasher](https://yashmulgaonkar.github.io/FlightScnr)** flashes firmware over USB from Chrome or Edge — no PlatformIO required.
 
 1. Connect the T-Encoder Pro via USB.
 2. Open WebFlasher, click **Connect**, then **Install** (or upload a downloaded `.bin`).
