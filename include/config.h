@@ -6,6 +6,13 @@
 
 namespace config {
 
+#ifndef FLIGHTSCNR_FIRMWARE_VERSION
+#define FLIGHTSCNR_FIRMWARE_VERSION "dev"
+#endif
+
+/** Build-time firmware version (release CI sets FLIGHTSCNR_FIRMWARE_VERSION). */
+constexpr char kFirmwareVersion[] = FLIGHTSCNR_FIRMWARE_VERSION;
+
 /** Project source repository (linked on device web UIs). */
 constexpr char kGithubRepoUrl[] =
     "https://github.com/yashmulgaonkar/FlightScnr";
@@ -46,6 +53,8 @@ constexpr int kDisplayHeight = 390;
 
 /** Flight detail / device settings return to radar; clock settings return to clock (ms). */
 constexpr unsigned long kSecondaryScreenTimeoutMs = 10000;
+/** Details splash shown at boot before radar (ms). */
+constexpr unsigned long kBootDetailsDurationMs = 5000;
 
 // --- Map center factory defaults (portal can override) ---
 constexpr double kFactoryLatitude = 52.3676;

@@ -17,6 +17,7 @@
 #include "services/wifi_setup.h"
 #include "ui/clock_screen.h"
 #include "ui/clock_settings_screen.h"
+#include "ui/details_screen.h"
 #include "ui/flight_detail_screen.h"
 #include "ui/info_screen.h"
 #include "ui/radar_display.h"
@@ -25,7 +26,14 @@
 
 namespace {
 
-enum class AppScreen : uint8_t { Radar, FlightDetail, Settings, Clock, ClockSettings };
+enum class AppScreen : uint8_t {
+  Radar,
+  FlightDetail,
+  Settings,
+  Details,
+  Clock,
+  ClockSettings,
+};
 
 AppScreen g_screen = AppScreen::Radar;
 bool g_radar_visible = false;
@@ -34,7 +42,10 @@ unsigned long g_last_reconnect_ms = 0;
 unsigned long g_last_adsb_fetch_ms = 0;
 unsigned long g_last_radar_frame_ms = 0;
 unsigned long g_secondary_activity_ms = 0;
+unsigned long g_boot_details_until_ms = 0;
 uint32_t g_last_clock_minute_stamp = UINT32_MAX;
+
+bool bootDetailsActive() { return g_boot_details_until_ms != 0; }
 
 void noteSecondaryActivity() {
   if (g_screen != AppScreen::Radar) {
@@ -77,6 +88,11 @@ void showClockSettings() {
   g_radar_visible = false;
 }
 
+void showDetails(bool boot_splash = false) {
+  ui::detailsScreenDraw(boot_splash);
+  g_radar_visible = false;
+}
+
 void returnToRadar(bool from_idle_timeout = false) {
   if (from_idle_timeout) {
     ui::infoScreenResetToMain();
@@ -112,6 +128,13 @@ void openClockFromRadar() {
   g_screen = AppScreen::Clock;
   showClock();
   Serial.println("Screen: clock");
+}
+
+void openDetailsFromRadar() {
+  g_screen = AppScreen::Details;
+  noteSecondaryActivity();
+  showDetails();
+  Serial.println("Screen: details");
 }
 
 void openClockSettingsFromClock() {
@@ -164,6 +187,11 @@ void onRangeStep(int8_t delta) {
 }
 
 void handleNavigation() {
+  if (bootDetailsActive()) {
+    inputConsumeSwipe();
+    return;
+  }
+
   const SwipeGesture swipe = inputConsumeSwipe();
   if (swipe != SwipeNone && g_screen != AppScreen::Radar &&
       g_screen != AppScreen::Clock) {
@@ -171,6 +199,10 @@ void handleNavigation() {
   }
   if (swipe == SwipeDown && g_screen == AppScreen::Radar) {
     openClockFromRadar();
+  } else if (swipe == SwipeUp && g_screen == AppScreen::Radar) {
+    openDetailsFromRadar();
+  } else if (swipe == SwipeDown && g_screen == AppScreen::Details) {
+    returnToRadar(false);
   } else if (swipe == SwipeUp && g_screen == AppScreen::Clock) {
     returnToRadar(false);
   } else if (swipe == SwipeLeft && g_screen == AppScreen::Clock) {
@@ -199,7 +231,24 @@ void handleNavigation() {
   }
 }
 
+void tickBootDetailsSplash() {
+  if (g_boot_details_until_ms == 0) {
+    return;
+  }
+  if (millis() < g_boot_details_until_ms) {
+    return;
+  }
+
+  g_boot_details_until_ms = 0;
+  inputDiscardPendingInteractions();
+  returnToRadar(false);
+  Serial.println("Screen: radar (boot splash done)");
+}
+
 void tickSecondaryScreenTimeout() {
+  if (bootDetailsActive()) {
+    return;
+  }
   if (g_screen == AppScreen::Radar || g_screen == AppScreen::Clock) {
     return;
   }
@@ -370,12 +419,16 @@ void setup() {
     services::clock::startNtp();
     services::route::init();
     services::adsb::fetchInit();
-    showRadar();
+    g_screen = AppScreen::Details;
+    g_boot_details_until_ms = millis() + config::kBootDetailsDurationMs;
+    showDetails(true);
+    Serial.println("Screen: details (boot splash)");
   }
 }
 
 void loop() {
   hardware::buzzerPoll();
+  tickBootDetailsSplash();
   tickSecondaryScreenTimeout();
   tickClockDisplay();
   handleInput();
@@ -408,6 +461,8 @@ void loop() {
           showClock();
         } else if (g_screen == AppScreen::ClockSettings) {
           showClockSettings();
+        } else if (g_screen == AppScreen::Details) {
+          showDetails();
         } else {
           showSettings();
         }

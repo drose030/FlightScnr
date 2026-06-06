@@ -86,7 +86,10 @@ jobs:
 
       - name: Build firmware
         if: steps.tag.outputs.skip != 'true'
+        env:
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
         run: |
+          export PLATFORMIO_BUILD_FLAGS="-D FLIGHTSCNR_FIRMWARE_VERSION=\\\"${RELEASE_TAG}\\\""
           pio run -e tencoder-pro
           pio run -t merge -e tencoder-pro
 
