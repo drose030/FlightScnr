@@ -37,12 +37,12 @@ const char kPageHead[] = R"HTML(<!DOCTYPE html>
 <title>FlightScnr Settings</title>
 <style>
 body{font-family:system-ui,sans-serif;max-width:28rem;margin:1.5rem auto;padding:0 1rem;
-background:#0a1628;color:#e8f0ff;}
+background:#000;color:#e8f0ff;}
 h1{font-size:1.25rem;margin:0 0 .5rem;}
 p{color:#9ab;line-height:1.4;font-size:.9rem;}
 label{display:block;margin:.75rem 0 .25rem;font-size:.85rem;}
 input,select{width:100%;box-sizing:border-box;padding:.5rem;border-radius:6px;
-border:1px solid #345;background:#122240;color:#fff;font-size:1rem;}
+border:1px solid #345;background:#555;color:#fff;font-size:1rem;}
 .chk{margin:.75rem 0;display:flex;align-items:center;gap:.5rem;}
 .chk input{width:auto;}
 button{margin-top:1.25rem;width:100%;padding:.75rem;font-size:1rem;font-weight:600;
@@ -85,7 +85,7 @@ void sendRebootPage() {
            "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
            "<title>Rebooting</title></head>"
            "<body style=\"font-family:system-ui,sans-serif;text-align:center;padding:2rem;"
-           "background:#0a1628;color:#e8f0ff\">"
+           "background:#000;color:#e8f0ff\">"
            "<h1>Saved</h1><p>Rebooting&hellip;</p>"
            "<p style=\"margin-top:1.5rem;font-size:.9rem\">"
            "<a href=\"%s\" style=\"color:#6cf\" target=\"_blank\" rel=\"noopener\">"

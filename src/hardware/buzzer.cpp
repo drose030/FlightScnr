@@ -22,7 +22,7 @@ constexpr uint16_t kToneHzDefault = 2000;
 
 constexpr char kToneLetters[] = {'A', 'B', 'C', 'D', 'E'};
 constexpr size_t kToneLevelCount = sizeof(kToneLetters) / sizeof(kToneLetters[0]);
-constexpr uint8_t kDefaultToneIndex = 2;  // C
+constexpr uint8_t kDefaultToneIndex = 0;  // A
 
 // LilyGO T-Encoder-Pro factory (Lvgl_CIT): ledcAttach @ 2000 Hz, duty 127 (~50%),
 // ledcChangeFrequency per step (1500/2000/2500 Hz). Never use duty 255 (DC, no tone).

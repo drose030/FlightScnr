@@ -25,13 +25,20 @@ constexpr char kPrefsForcePortalKey[] = "portal";
 constexpr uint8_t kReconnectFailuresBeforePortal = 2;
 
 /** Injected into every WiFiManager page via setCustomHeadElement. */
-char s_portal_custom_head[512];
+char s_portal_custom_head[896];
 
 void buildPortalCustomHead() {
   snprintf(
       s_portal_custom_head, sizeof(s_portal_custom_head),
-      "<style>.fs-ft{text-align:center;font-size:.85rem;margin:2rem 0 1rem;padding-top:"
-      "1rem;border-top:1px solid #ccc;}.fs-ft a{text-decoration:none;}</style>"
+      "<style>body.invert{background:#000!important}"
+      "body.invert input,body.invert select{background:#555!important;color:#fff!important;"
+      "border:1px solid #444!important}"
+      "body.invert button{background:#1a9c3c!important;color:#fff!important}"
+      "body.invert a{color:#e8f0ff!important}"
+      "body.invert a:hover{color:#6cf!important}"
+      ".fs-ft{text-align:center;font-size:.85rem;margin:2rem 0 1rem;padding-top:"
+      "1rem;border-top:1px solid #444}.fs-ft a{color:#6cf;text-decoration:none}"
+      "</style>"
       "<script>document.addEventListener('DOMContentLoaded',function(){var "
       "w=document.querySelector('.wrap');if(!w)return;var p=document.createElement('p');"
       "p.className='fs-ft';p.innerHTML='<a href=\"%s\" target=\"_blank\" "
@@ -172,6 +179,7 @@ void onConfigPortalApStarted(WiFiManager*) {
 
 void configureWifiManager(WiFiManager& wm) {
   wm.setTitle("FlightScnr");
+  wm.setDarkMode(true);
   buildPortalCustomHead();
   wm.setCustomHeadElement(s_portal_custom_head);
   const char* menu[] = {"wifi", "info", "exit"};
