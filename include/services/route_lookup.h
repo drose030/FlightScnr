@@ -56,8 +56,14 @@ bool detailWorkerBusy();
 /** True when ADS-B HTTPS should not start (detail enrich/debounce pending). */
 bool detailAdsbFetchPaused();
 
-/** True when route worker needs exclusive heap (main must not draw flight detail). */
-bool detailBlocksUiDraw();
+/**
+ * True only while the detail sprite is mid-release for TLS heap (the loop tears
+ * it down then, so the buffer must not be drawn into). A merely-busy route
+ * worker does NOT block drawing: the sprite is PSRAM-backed and only created or
+ * freed on the loop task, so scroll redraws run immediately while route
+ * enrichment continues in the background and fills in the route line when ready.
+ */
+bool detailDrawUnsafe();
 
 /** Release flight-detail sprite when the route worker requests it (main loop only). */
 void tickDetailSpriteRelease();

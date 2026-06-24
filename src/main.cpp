@@ -217,9 +217,12 @@ bool tlsBlocksPanel() {
   return services::adsb::fetchInProgress() || services::https::busy();
 }
 
-/** Flight detail draw uses RAM/sprite only — not the HTTPS lock. */
+/** Flight detail draw uses RAM/sprite only — not the HTTPS lock.
+ *  Only the brief sprite-release handshake (loop frees the PSRAM sprite for TLS
+ *  heap) must hold off drawing; a merely-busy worker does not, so scroll redraws
+ *  stay instant and the route line fills in async when enrichment lands. */
 bool detailDrawBlocked() {
-  return services::route::detailBlocksUiDraw();
+  return services::route::detailDrawUnsafe();
 }
 
 

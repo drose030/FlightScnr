@@ -1922,9 +1922,7 @@ bool detailAdsbFetchPaused() {
   return s_detail_step != DetailStep::kIdle;
 }
 
-bool detailBlocksUiDraw() {
-  return s_detail_sprite_release_pending || s_detail_busy || s_detail_requested;
-}
+bool detailDrawUnsafe() { return s_detail_sprite_release_pending; }
 
 void tickDetailSpriteReleaseImpl() {
   if (!s_detail_sprite_release_pending || s_detail_sprite_released_ack) {

@@ -982,7 +982,7 @@ const char* flightDetailSelectedCallsign() {
 
 void flightDetailDraw() {
   const unsigned long draw_start_ms = millis();
-  if (services::route::detailBlocksUiDraw()) {
+  if (services::route::detailDrawUnsafe()) {
     return;
   }
   if (!ensureDetailSprite()) {
@@ -1100,7 +1100,7 @@ void flightDetailDraw() {
 }
 
 void flightDetailRefresh() {
-  if (services::route::detailBlocksUiDraw()) {
+  if (services::route::detailDrawUnsafe()) {
     return;
   }
   resyncOrderPreservingSelection();
@@ -1166,7 +1166,7 @@ void flightDetailRefresh() {
     if (config::kSerialTraceDebug) {
       Serial.printf("[detail] refresh static changed %s -> full draw\n", s.callsign);
     }
-    if (services::route::detailBlocksUiDraw()) {
+    if (services::route::detailDrawUnsafe()) {
       return;
     }
     flightDetailDraw();
