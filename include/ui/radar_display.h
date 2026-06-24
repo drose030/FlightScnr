@@ -5,10 +5,10 @@ namespace ui {
 /** Draw the static sonar/radar grid (black disc, green overlay, labels). */
 void radarDisplayDraw();
 
-/** Incremental sweep animation (~30 fps); does not full-screen blit. */
+/** Compose grid + aircraft + sweep in RAM and push one frame to the panel. */
 void radarDisplayRefreshSweep();
 
-/** Redraw aircraft only (blits cached grid; no full-screen clear). */
+/** Note ADS-B aircraft changes; panel updates on the next sweep frame. */
 void radarDisplayRefreshAircraft();
 
 }  // namespace ui

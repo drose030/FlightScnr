@@ -60,7 +60,11 @@ constexpr unsigned long kBootDetailsDurationMs = 5000;
 constexpr double kFactoryLatitude = 37.61977;
 constexpr double kFactoryLongitude = -122.37227;
 
-/** ADS-B poll interval (adsb.fi public limit ~1 req/s). */
+/** ADS-B poll interval (adsb.fi public limit ~1 req/s).
+ *  The fetch worker is pinned to core 0 and the render loop is decoupled, so a
+ *  faster poll no longer stutters the sweep. Effective blip refresh is
+ *  max(this, fetch duration); fetches take ~3-8s due to a fresh TLS handshake
+ *  per request, so 2s keeps us well under the ~1 req/s API limit. */
 constexpr unsigned long kTrafficPollIntervalMs = 2000;
 
 /** ADS-B poll interval on flight detail when route enrichment is idle (ms). */
@@ -92,6 +96,9 @@ constexpr bool kGfxDebug = false;
 
 /** Serial [detail]/[fetch] trace for scroll, draw, enrich, TLS (disable once stable). */
 constexpr bool kSerialTraceDebug = true;
+
+/** Serial [sweep] radar animation / blit stall diagnostics (disable once stable). */
+constexpr bool kRadarSweepTraceDebug = true;
 
 /** Full ADS-B aircraft table on serial (very verbose). */
 constexpr bool kAdsbVerboseAircraftLog = false;

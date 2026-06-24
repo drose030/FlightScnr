@@ -717,8 +717,10 @@ void fetchInit() {
   if (s_aircraft_mutex == nullptr) {
     s_aircraft_mutex = xSemaphoreCreateMutex();
   }
+  // Pin to core 0 (PRO_CPU, alongside the WiFi/TLS stack) so heavy HTTPS/mbedTLS
+  // CPU work never starves the render loop, which runs on core 1 (ARDUINO_RUNNING_CORE).
   xTaskCreatePinnedToCore(fetchWorkerTask, "adsb_fetch", 16384, nullptr, 1, &s_fetch_task,
-                          1);
+                          0);
 }
 
 bool fetchRequest(double center_lat, double center_lon, float fetch_radius_km) {

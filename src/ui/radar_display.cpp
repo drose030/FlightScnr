@@ -52,9 +52,25 @@ PlaneGfxSprite s_content(&tft);
 bool s_bg_ready = false;
 bool s_content_ready = false;
 
-constexpr int kMaxSweepSpokes = 8;
-float s_sweep_angle_deg = 0.0f;
+struct IntRect {
+  int x = 0;
+  int y = 0;
+  int w = 0;
+  int h = 0;
+
+  IntRect() = default;
+  IntRect(int x_in, int y_in, int w_in, int h_in) : x(x_in), y(y_in), w(w_in), h(h_in) {}
+};
+
+bool s_aircraft_dirty = false;
+IntRect s_aircraft_dirty_rect{};
+bool s_content_base_valid = false;
 bool s_sweep_track_valid = false;
+IntRect s_prev_sweep_dirty{};
+float s_display_sweep_deg = 0.0f;
+float s_last_painted_sweep_deg = 0.0f;
+unsigned long s_last_sweep_paint_ms = 0;
+bool s_display_sweep_init = false;
 
 struct CachedAircraftMarker {
   services::adsb::Aircraft plane{};
@@ -68,14 +84,6 @@ size_t s_prev_aircraft_marker_count = 0;
 /** Scratch for ADS-B refresh — must not live on loopTask stack (~8 KB). */
 CachedAircraftMarker s_current_aircraft_markers[services::adsb::kMaxAircraft];
 bool s_marker_prev_used[services::adsb::kMaxAircraft] = {};
-
-enum class ContentPanelSync : uint8_t {
-  None,
-  PushSprite,
-  BlitStatic,
-};
-
-ContentPanelSync s_content_panel_sync = ContentPanelSync::None;
 
 class DrawScope {
  public:
@@ -589,6 +597,7 @@ bool rebuildBackgroundSprite() {
   }
 
   drawStaticGrid(s_bg.gfx());
+  s_content_base_valid = false;
   s_sweep_track_valid = false;
   return true;
 }
@@ -605,23 +614,15 @@ bool ensureContentSprite() {
   return true;
 }
 
-bool rebuildContentLayer() {
-  if (!s_bg_ready || !ensureContentSprite()) {
-    return false;
-  }
-
-  const int w = s_bg.width();
-  const int h = s_bg.height();
-  const size_t pixels = static_cast<size_t>(w) * static_cast<size_t>(h);
-  memcpy(s_content.bufferMut(), s_bg.buffer(), pixels * sizeof(uint16_t));
-
-  {
-    const DrawScope scope(s_content.gfx());
-    drawAircraft();
-  }
-
-  return true;
-}
+void drawSweepAtOn(PlaneGfx& gfx, float lead_deg);
+float currentSweepAngleDeg();
+void resetDisplaySweepAngle(unsigned long now);
+float advanceDisplaySweepAngle(unsigned long now);
+float sweepAngleDeltaDeg(float from_deg, float to_deg);
+void recoverSweepAfterGap(unsigned long gap_ms);
+bool rebuildContentBase();
+void blitRegionToPanel(const IntRect& rect);
+void updateSweepOnPanel(float lead_deg);
 
 void sweepSpokeEndpoint(float angle_deg, int* ex, int* ey) {
   constexpr float kDegToRad = 0.01745329252f;
@@ -633,17 +634,10 @@ void sweepSpokeEndpoint(float angle_deg, int* ex, int* ey) {
   *ey = cy - static_cast<int>(lroundf(cosf(rad) * static_cast<float>(r)));
 }
 
-struct IntRect {
-  int x = 0;
-  int y = 0;
-  int w = 0;
-  int h = 0;
+void savePrevAircraftMarkers();
 
-  IntRect() = default;
-  IntRect(int x_in, int y_in, int w_in, int h_in) : x(x_in), y(y_in), w(w_in), h(h_in) {}
-};
-
-IntRect s_prev_sweep_dirty;
+bool rectEmpty(const IntRect& r);
+IntRect markerBounds(const CachedAircraftMarker& marker);
 
 bool rectEmpty(const IntRect& r) { return r.w <= 0 || r.h <= 0; }
 
@@ -653,8 +647,6 @@ bool rectsOverlap(const IntRect& a, const IntRect& b) {
   }
   return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 }
-
-void drawAircraftInRect(const IntRect& dirty);
 
 IntRect rectFromPoints(int x0, int y0, int x1, int y1, int margin) {
   IntRect r;
@@ -699,6 +691,11 @@ IntRect unionRect(const IntRect& a, const IntRect& b) {
   return IntRect{x0, y0, x1 - x0, y1 - y0};
 }
 
+int sweepEraseMargin() {
+  constexpr int kBase = static_cast<int>(radar::kSweepLineHalfWidth * 2.0f + 4.0f);
+  return kBase + (hardware::panelUsesCo5300() ? 2 : 0);
+}
+
 IntRect spokeBounds(float angle_deg, int margin) {
   int ex = 0;
   int ey = 0;
@@ -736,75 +733,6 @@ void copyBgRegionToContent(const IntRect& rect) {
   }
 }
 
-void patchContentLayer(const IntRect& dirty) {
-  if (!s_bg_ready || !ensureContentSprite()) {
-    return;
-  }
-  copyBgRegionToContent(dirty);
-  {
-    const DrawScope scope(s_content.gfx());
-    drawAircraftInRect(dirty);
-  }
-}
-
-void blitRegionToPanel(const IntRect& rect, const uint16_t* content, int stride) {
-  if (rectEmpty(rect) || content == nullptr) {
-    return;
-  }
-  const IntRect clipped = clampRectToScreen(rect);
-  if (rectEmpty(clipped)) {
-    return;
-  }
-
-  hardware::gfxLogf("[radar] blitRegion panel %dx%d @ (%d,%d)", clipped.w, clipped.h,
-                    clipped.x, clipped.y);
-  tft.blitRegionFromBuffer(static_cast<int16_t>(clipped.x),
-                           static_cast<int16_t>(clipped.y),
-                           static_cast<int16_t>(clipped.w),
-                           static_cast<int16_t>(clipped.h),
-                           content + static_cast<size_t>(clipped.y) * static_cast<size_t>(stride) +
-                               static_cast<size_t>(clipped.x),
-                           static_cast<int16_t>(stride));
-}
-
-void blitRegionFromContent(const IntRect& rect, const uint16_t* content, int stride) {
-  if (rectEmpty(rect) || content == nullptr) {
-    return;
-  }
-  IntRect clipped = clampRectToScreen(rect);
-  if (rectEmpty(clipped)) {
-    return;
-  }
-
-  const int area = clipped.w * clipped.h;
-  constexpr int kScreenPixels = radar::kSize * radar::kSize;
-  if (area >= kScreenPixels / 3 && s_content_ready) {
-    hardware::gfxLog("[radar] blitRegion full pushSprite");
-    s_content.pushSprite(0, 0);
-    hardware::gfxLog("[radar] blitRegion full pushSprite ok");
-    return;
-  }
-
-  hardware::gfxLogf("[radar] blitRegion partial %dx%d @ (%d,%d)", clipped.w, clipped.h,
-                    clipped.x, clipped.y);
-  tft.blitRegionFromBuffer(static_cast<int16_t>(clipped.x),
-                           static_cast<int16_t>(clipped.y),
-                           static_cast<int16_t>(clipped.w),
-                           static_cast<int16_t>(clipped.h),
-                           content + static_cast<size_t>(clipped.y) * static_cast<size_t>(stride) +
-                               static_cast<size_t>(clipped.x),
-                           static_cast<int16_t>(stride));
-  hardware::gfxLog("[radar] blitRegion partial ok");
-}
-
-void drawSweepSpokeOn(PlaneGfx& gfx, float angle_deg, uint16_t color) {
-  int ex = 0;
-  int ey = 0;
-  sweepSpokeEndpoint(angle_deg, &ex, &ey);
-  gfx.drawWideLine(radar::kCenterX, radar::kCenterY, ex, ey, radar::kSweepLineHalfWidth,
-                   color);
-}
-
 int collectSweepAngles(float lead_deg, float* angles, int max_angles) {
   if (max_angles <= 0) {
     return 0;
@@ -828,94 +756,11 @@ int collectSweepAngles(float lead_deg, float* angles, int max_angles) {
   return count;
 }
 
-float sweepStepDeg() {
-  return 360.0f * static_cast<float>(radar::kSweepFrameMs) /
-         static_cast<float>(radar::kSweepPeriodMs);
-}
-
-void advanceSweepAngle() {
-  s_sweep_angle_deg += sweepStepDeg();
-  if (s_sweep_angle_deg >= 360.0f) {
-    s_sweep_angle_deg -= 360.0f;
-  }
-}
-
-float currentSweepAngleDeg() { return s_sweep_angle_deg; }
-
-IntRect aircraftMarkerBounds(int x, int y, const services::adsb::Aircraft& plane) {
-  applyTagStyle();
-  const int block_w = measureTagBlockWidth(plane);
-  const int block_h = s_draw->fontHeight() * 3;
-  const int symbol_half = aircraftSymbolHalfPx();
-  constexpr int kPad = 6;
-
-  int min_x = x - symbol_half - kPad;
-  int max_x = x + symbol_half + kPad;
-  int min_y = y - symbol_half - kPad;
-  int max_y = y + symbol_half + kPad;
-
-  if (x < radar::kCenterX) {
-    max_x = std::max(max_x, x + symbol_half + radar::kAircraftLabelGapPx + kPad);
-    min_x = std::min(min_x, x - symbol_half - block_w - radar::kAircraftLabelGapPx - kPad);
-  } else {
-    min_x = std::min(min_x, x - symbol_half - block_w - radar::kAircraftLabelGapPx - kPad);
-    max_x = std::max(max_x, x + symbol_half + radar::kAircraftLabelGapPx + kPad);
-  }
-  min_y = std::min(min_y, y - block_h / 2 - kPad);
-  max_y = std::max(max_y, y + block_h / 2 + kPad);
-
-  return clampRectToScreen(
-      IntRect(min_x, min_y, max_x - min_x + 1, max_y - min_y + 1));
-}
-
-size_t collectAircraftMarkers(CachedAircraftMarker* markers, size_t max_markers) {
-  if (markers == nullptr || max_markers == 0) {
-    return 0;
-  }
-
-  const size_t n = services::adsb::aircraftCount();
-  const services::adsb::Aircraft* planes = services::adsb::aircraftList();
-  size_t count = 0;
-
-  for (size_t i = 0; i < n && count < max_markers; ++i) {
-    float dx_km = 0.0f;
-    float dy_km = 0.0f;
-    float dist_km = 0.0f;
-    localOffsetFromCenter(planes[i].lat, planes[i].lon, &dx_km, &dy_km, &dist_km);
-
-    CachedAircraftMarker& marker = markers[count];
-    marker.plane = planes[i];
-
-    if (isInsideOuterRingKm(dist_km)) {
-      latLonToScreen(planes[i].lat, planes[i].lon, &marker.x, &marker.y);
-      marker.beyond_dot = false;
-      ++count;
-      continue;
-    }
-
-    if (beyondRingEdgeDotFromLatLon(planes[i].lat, planes[i].lon, &marker.x, &marker.y)) {
-      marker.beyond_dot = true;
-      ++count;
-    }
-  }
-  return count;
-}
-
-IntRect markerBounds(const CachedAircraftMarker& marker) {
-  if (marker.beyond_dot) {
-    const int dot_r = aircraft_symbol::radiusPx() / 2 + 4;
-    return clampRectToScreen(IntRect(marker.x - dot_r, marker.y - dot_r, dot_r * 2 + 1,
-                                     dot_r * 2 + 1));
-  }
-  return aircraftMarkerBounds(marker.x, marker.y, marker.plane);
-}
-
 void drawAircraftInRect(const IntRect& dirty) {
   if (rectEmpty(dirty)) {
     return;
   }
   const IntRect clip = clampRectToScreen(dirty);
-
   initLabelMetrics();
 
   const size_t n = services::adsb::aircraftCount();
@@ -988,6 +833,237 @@ void drawAircraftInRect(const IntRect& dirty) {
     const size_t i = items[d].index;
     drawAircraftTag(items[d].x, items[d].y, planes[i]);
   }
+}
+
+bool rebuildContentBase() {
+  if (!s_bg_ready || !ensureContentSprite()) {
+    return false;
+  }
+
+  const int w = s_bg.width();
+  const int h = s_bg.height();
+  const size_t pixels = static_cast<size_t>(w) * static_cast<size_t>(h);
+  memcpy(s_content.bufferMut(), s_bg.buffer(), pixels * sizeof(uint16_t));
+
+  {
+    const DrawScope scope(s_content.gfx());
+    drawAircraft();
+  }
+
+  s_content_base_valid = true;
+  s_sweep_track_valid = false;
+  return true;
+}
+
+void blitRegionToPanel(const IntRect& rect) {
+  if (rectEmpty(rect) || !s_content_ready) {
+    return;
+  }
+  const IntRect clipped = clampRectToScreen(rect);
+  if (rectEmpty(clipped)) {
+    return;
+  }
+
+  const uint16_t* content = s_content.buffer();
+  const int stride = s_content.width();
+  tft.blitRegionFromBuffer(static_cast<int16_t>(clipped.x),
+                           static_cast<int16_t>(clipped.y),
+                           static_cast<int16_t>(clipped.w),
+                           static_cast<int16_t>(clipped.h),
+                           content + static_cast<size_t>(clipped.y) * static_cast<size_t>(stride) +
+                               static_cast<size_t>(clipped.x),
+                           static_cast<int16_t>(stride));
+}
+
+void updateSweepOnPanel(float lead_deg) {
+  float angles[8] = {};
+  const int count = collectSweepAngles(lead_deg, angles, 8);
+  const int margin = sweepEraseMargin();
+  const IntRect new_dirty = unionSpokeBounds(angles, count, margin);
+
+  IntRect erase_dirty = new_dirty;
+  const float angle_step = sweepAngleDeltaDeg(s_last_painted_sweep_deg, lead_deg);
+  if (s_sweep_track_valid) {
+    if (angle_step <= radar::kSweepIncrementalMaxDeg) {
+      erase_dirty = unionRect(s_prev_sweep_dirty, new_dirty);
+    } else if (!rectEmpty(s_prev_sweep_dirty)) {
+      blitRegionToPanel(s_prev_sweep_dirty);
+      tft.setTextDatum(TextDatum::TopLeft);
+    }
+  }
+
+  const unsigned long blit_start = millis();
+  if (!rectEmpty(erase_dirty)) {
+    blitRegionToPanel(erase_dirty);
+  }
+  const unsigned long blit_ms = millis() - blit_start;
+
+  const unsigned long draw_start = millis();
+  {
+    const DrawScope scope(tft);
+    drawSweepAtOn(tft, lead_deg);
+  }
+  tft.setTextDatum(TextDatum::TopLeft);
+  const unsigned long draw_ms = millis() - draw_start;
+
+  s_prev_sweep_dirty = new_dirty;
+  s_sweep_track_valid = true;
+  s_last_painted_sweep_deg = lead_deg;
+
+  if (config::kRadarSweepTraceDebug && (blit_ms >= 8 || draw_ms >= 8)) {
+    Serial.printf("[sweep] panel ang=%.1f erase=%dx%d blit_ms=%lu draw_ms=%lu\n", lead_deg,
+                  erase_dirty.w, erase_dirty.h, blit_ms, draw_ms);
+  }
+}
+
+void drawSweepSpokeOn(PlaneGfx& gfx, float angle_deg, uint16_t color) {
+  int ex = 0;
+  int ey = 0;
+  sweepSpokeEndpoint(angle_deg, &ex, &ey);
+  gfx.drawWideLine(radar::kCenterX, radar::kCenterY, ex, ey, radar::kSweepLineHalfWidth,
+                   color);
+}
+
+void drawSweepAtOn(PlaneGfx& gfx, float lead_deg) {
+  if (radar::kSweepTrailLines <= 1) {
+    drawSweepSpokeOn(gfx, lead_deg, radar::kColorSweep);
+    return;
+  }
+
+  for (int i = radar::kSweepTrailLines - 1; i >= 1; --i) {
+    const float t = static_cast<float>(i) / static_cast<float>(radar::kSweepTrailLines - 1);
+    const float angle = lead_deg - t * radar::kSweepTrailSpanDeg;
+    drawSweepSpokeOn(gfx, angle, radar::kColorSweepTrail);
+  }
+  drawSweepSpokeOn(gfx, lead_deg, radar::kColorSweep);
+}
+
+float currentSweepAngleDeg() {
+  const unsigned long t = millis() % radar::kSweepPeriodMs;
+  return 360.0f * static_cast<float>(t) / static_cast<float>(radar::kSweepPeriodMs);
+}
+
+void resetDisplaySweepAngle(unsigned long now) {
+  s_display_sweep_deg = currentSweepAngleDeg();
+  s_last_painted_sweep_deg = s_display_sweep_deg;
+  s_last_sweep_paint_ms = now;
+  s_display_sweep_init = true;
+}
+
+float sweepAngleDeltaDeg(float from_deg, float to_deg) {
+  float delta = std::fabs(to_deg - from_deg);
+  if (delta > 180.0f) {
+    delta = 360.0f - delta;
+  }
+  return delta;
+}
+
+float advanceDisplaySweepAngle(unsigned long now) {
+  if (!s_display_sweep_init) {
+    resetDisplaySweepAngle(now);
+    return s_display_sweep_deg;
+  }
+
+  unsigned long dt = now - s_last_sweep_paint_ms;
+  s_last_sweep_paint_ms = now;
+  if (dt == 0) {
+    return s_display_sweep_deg;
+  }
+
+  if (dt > radar::kSweepGapPauseMs) {
+    dt = radar::kSweepFrameMs;
+  } else if (dt > radar::kSweepMaxStepMs) {
+    dt = radar::kSweepMaxStepMs;
+  }
+
+  const float rate = 360.0f / static_cast<float>(radar::kSweepPeriodMs);
+  s_display_sweep_deg += rate * static_cast<float>(dt);
+  if (s_display_sweep_deg >= 360.0f) {
+    s_display_sweep_deg = std::fmod(s_display_sweep_deg, 360.0f);
+  }
+  return s_display_sweep_deg;
+}
+
+void recoverSweepAfterGap(unsigned long gap_ms) {
+  if (gap_ms <= radar::kSweepGapPauseMs) {
+    return;
+  }
+  if (s_sweep_track_valid && !rectEmpty(s_prev_sweep_dirty)) {
+    blitRegionToPanel(s_prev_sweep_dirty);
+    tft.setTextDatum(TextDatum::TopLeft);
+    s_sweep_track_valid = false;
+    if (config::kRadarSweepTraceDebug) {
+      Serial.printf("[sweep] gap_recover gap=%lums\n", gap_ms);
+    }
+  }
+}
+
+IntRect aircraftMarkerBounds(int x, int y, const services::adsb::Aircraft& plane) {
+  applyTagStyle();
+  const int block_w = measureTagBlockWidth(plane);
+  const int block_h = s_draw->fontHeight() * 3;
+  const int symbol_half = aircraftSymbolHalfPx();
+  constexpr int kPad = 6;
+
+  int min_x = x - symbol_half - kPad;
+  int max_x = x + symbol_half + kPad;
+  int min_y = y - symbol_half - kPad;
+  int max_y = y + symbol_half + kPad;
+
+  if (x < radar::kCenterX) {
+    max_x = std::max(max_x, x + symbol_half + radar::kAircraftLabelGapPx + kPad);
+    min_x = std::min(min_x, x - symbol_half - block_w - radar::kAircraftLabelGapPx - kPad);
+  } else {
+    min_x = std::min(min_x, x - symbol_half - block_w - radar::kAircraftLabelGapPx - kPad);
+    max_x = std::max(max_x, x + symbol_half + radar::kAircraftLabelGapPx + kPad);
+  }
+  min_y = std::min(min_y, y - block_h / 2 - kPad);
+  max_y = std::max(max_y, y + block_h / 2 + kPad);
+
+  return clampRectToScreen(
+      IntRect(min_x, min_y, max_x - min_x + 1, max_y - min_y + 1));
+}
+
+size_t collectAircraftMarkers(CachedAircraftMarker* markers, size_t max_markers) {
+  if (markers == nullptr || max_markers == 0) {
+    return 0;
+  }
+
+  const size_t n = services::adsb::aircraftCount();
+  const services::adsb::Aircraft* planes = services::adsb::aircraftList();
+  size_t count = 0;
+
+  for (size_t i = 0; i < n && count < max_markers; ++i) {
+    float dx_km = 0.0f;
+    float dy_km = 0.0f;
+    float dist_km = 0.0f;
+    localOffsetFromCenter(planes[i].lat, planes[i].lon, &dx_km, &dy_km, &dist_km);
+
+    CachedAircraftMarker& marker = markers[count];
+    marker.plane = planes[i];
+
+    if (isInsideOuterRingKm(dist_km)) {
+      latLonToScreen(planes[i].lat, planes[i].lon, &marker.x, &marker.y);
+      marker.beyond_dot = false;
+      ++count;
+      continue;
+    }
+
+    if (beyondRingEdgeDotFromLatLon(planes[i].lat, planes[i].lon, &marker.x, &marker.y)) {
+      marker.beyond_dot = true;
+      ++count;
+    }
+  }
+  return count;
+}
+
+IntRect markerBounds(const CachedAircraftMarker& marker) {
+  if (marker.beyond_dot) {
+    const int dot_r = aircraft_symbol::radiusPx() / 2 + 4;
+    return clampRectToScreen(IntRect(marker.x - dot_r, marker.y - dot_r, dot_r * 2 + 1,
+                                     dot_r * 2 + 1));
+  }
+  return aircraftMarkerBounds(marker.x, marker.y, marker.plane);
 }
 
 bool aircraftIdentityMatch(const services::adsb::Aircraft& a,
@@ -1068,24 +1144,6 @@ void savePrevAircraftMarkers() {
       collectAircraftMarkers(s_prev_aircraft_markers, services::adsb::kMaxAircraft);
 }
 
-void drawSweepSpoke(float angle_deg, uint16_t color) {
-  drawSweepSpokeOn(tft, angle_deg, color);
-}
-
-void drawSweepAt(float lead_deg) {
-  if (radar::kSweepTrailLines <= 1) {
-    drawSweepSpoke(lead_deg, radar::kColorSweep);
-    return;
-  }
-
-  for (int i = radar::kSweepTrailLines - 1; i >= 1; --i) {
-    const float t = static_cast<float>(i) / static_cast<float>(radar::kSweepTrailLines - 1);
-    const float angle = lead_deg - t * radar::kSweepTrailSpanDeg;
-    drawSweepSpoke(angle, radar::kColorSweepTrail);
-  }
-  drawSweepSpoke(lead_deg, radar::kColorSweep);
-}
-
 }  // namespace
 
 static void blitStatic() {
@@ -1096,136 +1154,134 @@ static void blitStatic() {
     drawStaticGrid(tft);
     drawAircraft();
     tft.setTextDatum(TextDatum::TopLeft);
-    s_sweep_track_valid = false;
     return;
   }
 
-  if (!rebuildContentLayer()) {
+  if (!rebuildContentBase()) {
     s_bg.pushSprite(0, 0);
     drawAircraft();
     tft.setTextDatum(TextDatum::TopLeft);
-    s_sweep_track_valid = false;
     return;
   }
 
   s_content.pushSprite(0, 0);
   tft.setTextDatum(TextDatum::TopLeft);
-  s_sweep_track_valid = false;
+  if (displayPrefsSweepLineEnabled()) {
+    resetDisplaySweepAngle(millis());
+    updateSweepOnPanel(s_display_sweep_deg);
+  }
   savePrevAircraftMarkers();
-}
-
-bool applyPendingContentPanelSync() {
-  const ContentPanelSync pending = s_content_panel_sync;
-  if (pending == ContentPanelSync::None) {
-    return false;
-  }
-
-  switch (pending) {
-    case ContentPanelSync::None:
-      break;
-    case ContentPanelSync::BlitStatic:
-      hardware::gfxLog("[radar] panel sync: blitStatic");
-      blitStatic();
-      break;
-    case ContentPanelSync::PushSprite:
-      hardware::gfxLog("[radar] panel sync: pushSprite");
-      s_content.pushSprite(0, 0);
-      tft.setTextDatum(TextDatum::TopLeft);
-      s_sweep_track_valid = false;
-      break;
-  }
-  s_content_panel_sync = ContentPanelSync::None;
-  hardware::gfxLog("[radar] panel sync done");
-  return true;
 }
 
 void radarDisplayRefreshSweep() {
   initPalette();
 
+  if (!s_bg_ready) {
+    rebuildBackgroundSprite();
+  }
+
+  const unsigned long now = millis();
+  const bool draw_sweep = displayPrefsSweepLineEnabled();
+
   if (!s_content_ready) {
-    const DrawScope scope(tft);
-    if (displayPrefsSweepLineEnabled()) {
-      advanceSweepAngle();
-      drawSweepAt(currentSweepAngleDeg());
+    if (!ensureContentSprite()) {
+      const DrawScope scope(tft);
+      if (draw_sweep) {
+        unsigned long paint_gap = 0;
+        if (s_display_sweep_init && s_last_sweep_paint_ms > 0) {
+          paint_gap = now - s_last_sweep_paint_ms;
+        }
+        recoverSweepAfterGap(paint_gap);
+        const float angle = advanceDisplaySweepAngle(now);
+        drawSweepAtOn(tft, angle);
+      }
+      drawAircraft();
+      tft.setTextDatum(TextDatum::TopLeft);
+      if (s_aircraft_dirty) {
+        savePrevAircraftMarkers();
+        s_aircraft_dirty = false;
+      }
+      return;
     }
-    drawAircraft();
-    tft.setTextDatum(TextDatum::TopLeft);
-    return;
   }
 
-  hardware::gfxLog("[radar] sweep begin");
+  if (s_aircraft_dirty || !s_content_base_valid) {
+    if (!rebuildContentBase()) {
+      return;
+    }
 
-  const bool content_synced = applyPendingContentPanelSync();
+    const unsigned long patch_start = millis();
+    if (s_sweep_track_valid && !rectEmpty(s_prev_sweep_dirty)) {
+      blitRegionToPanel(s_prev_sweep_dirty);
+      tft.setTextDatum(TextDatum::TopLeft);
+    }
 
-  if (!displayPrefsSweepLineEnabled()) {
+    IntRect patch = s_aircraft_dirty_rect;
+    if (rectEmpty(patch)) {
+      patch = IntRect{0, 0, radar::kSize, radar::kSize};
+    }
+    patch = clampRectToScreen(patch);
+    constexpr int kScreenPixels = radar::kSize * radar::kSize;
+    const int patch_pixels = patch.w * patch.h;
+    if (patch_pixels >= kScreenPixels / 3) {
+      s_content.pushSprite(0, 0);
+      tft.setTextDatum(TextDatum::TopLeft);
+      if (config::kRadarSweepTraceDebug) {
+        Serial.printf("[sweep] aircraft blit full (%lums)\n", millis() - patch_start);
+      }
+    } else {
+      blitRegionToPanel(patch);
+      tft.setTextDatum(TextDatum::TopLeft);
+      if (config::kRadarSweepTraceDebug) {
+        Serial.printf("[sweep] aircraft blit %dx%d @ (%d,%d) (%lums)\n", patch.w, patch.h,
+                      patch.x, patch.y, millis() - patch_start);
+      }
+    }
     s_sweep_track_valid = false;
-    hardware::gfxLog("[radar] sweep disabled");
-    return;
+    savePrevAircraftMarkers();
+    s_aircraft_dirty = false;
+    s_aircraft_dirty_rect = {};
   }
 
-  advanceSweepAngle();
-
-  const uint16_t* content = s_content.buffer();
-  const int content_stride = s_content.width();
-
-  float new_angles[kMaxSweepSpokes] = {};
-  const int new_count =
-      collectSweepAngles(currentSweepAngleDeg(), new_angles, kMaxSweepSpokes);
-
-  constexpr int kSweepMarginBase =
-      static_cast<int>(radar::kSweepLineHalfWidth * 2.0f + 4.0f);
-  const int kSweepMargin =
-      kSweepMarginBase + (hardware::panelUsesCo5300() ? 2 : 0);
-  const IntRect new_dirty = unionSpokeBounds(new_angles, new_count, kSweepMargin);
-
-  IntRect erase_dirty = new_dirty;
-  if (s_sweep_track_valid) {
-    erase_dirty = unionRect(s_prev_sweep_dirty, new_dirty);
+  if (draw_sweep) {
+    unsigned long paint_gap = 0;
+    if (s_display_sweep_init && s_last_sweep_paint_ms > 0) {
+      paint_gap = now - s_last_sweep_paint_ms;
+    }
+    recoverSweepAfterGap(paint_gap);
+    const float angle = advanceDisplaySweepAngle(now);
+    updateSweepOnPanel(angle);
+  } else if (s_sweep_track_valid) {
+    blitRegionToPanel(s_prev_sweep_dirty);
+    tft.setTextDatum(TextDatum::TopLeft);
+    s_sweep_track_valid = false;
   }
-
-  if (content_synced) {
-    hardware::gfxLog("[radar] skip erase blit (content synced)");
-  } else if (!rectEmpty(erase_dirty)) {
-    blitRegionFromContent(erase_dirty, content, content_stride);
-  }
-
-  hardware::gfxLogf("[radar] draw %d sweep spokes", new_count);
-  for (int i = 0; i < new_count; ++i) {
-    const uint16_t color =
-        (i == new_count - 1) ? radar::kColorSweep : radar::kColorSweepTrail;
-    drawSweepSpokeOn(tft, new_angles[i], color);
-  }
-  tft.setTextDatum(TextDatum::TopLeft);
-
-  s_prev_sweep_dirty = new_dirty;
-  s_sweep_track_valid = true;
-
-  hardware::gfxLog("[radar] sweep end");
 }
 
 void radarDisplayDraw() {
   initPalette();
   initLabelMetrics();
-  s_content_panel_sync = ContentPanelSync::None;
-  s_sweep_angle_deg = 0.0f;
+  s_aircraft_dirty = false;
+  s_aircraft_dirty_rect = {};
+  s_content_base_valid = false;
   s_sweep_track_valid = false;
+  s_display_sweep_init = false;
   s_prev_aircraft_marker_count = 0;
 
-  if (rebuildBackgroundSprite() && rebuildContentLayer()) {
+  if (rebuildBackgroundSprite() && ensureContentSprite()) {
     blitStatic();
-    if (displayPrefsSweepLineEnabled()) {
-      radarDisplayRefreshSweep();
-    }
     return;
   }
 
   const DrawScope scope(tft);
   drawStaticGrid(tft);
   if (displayPrefsSweepLineEnabled()) {
-    drawSweepAt(currentSweepAngleDeg());
+    resetDisplaySweepAngle(millis());
+    drawSweepAtOn(tft, s_display_sweep_deg);
   }
   drawAircraft();
   tft.setTextDatum(TextDatum::TopLeft);
+  savePrevAircraftMarkers();
 }
 
 void radarDisplayRefreshAircraft() {
@@ -1247,17 +1303,13 @@ void radarDisplayRefreshAircraft() {
   if (!s_bg_ready) {
     rebuildBackgroundSprite();
   }
-  if (!s_bg_ready || !ensureContentSprite()) {
-    s_content_panel_sync = ContentPanelSync::BlitStatic;
-    hardware::gfxLog("[radar] adsb pending blitStatic");
-    return;
-  }
+  ensureContentSprite();
+  s_aircraft_dirty = true;
+  s_aircraft_dirty_rect = dirty;
 
-  patchContentLayer(dirty);
-  blitRegionFromContent(dirty, s_content.buffer(), s_content.width());
-  tft.setTextDatum(TextDatum::TopLeft);
-  s_sweep_track_valid = false;
-  savePrevAircraftMarkers();
+  if (config::kRadarSweepTraceDebug) {
+    Serial.println("[sweep] aircraft_refresh deferred");
+  }
 }
 
 }  // namespace ui

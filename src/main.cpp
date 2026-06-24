@@ -56,6 +56,7 @@ unsigned long g_last_adsb_fetch_ms = 0;
 unsigned long g_last_adsb_ssl_recover_ms = 0;
 unsigned long g_last_tls_proactive_refresh_ms = 0;
 unsigned long g_last_radar_frame_ms = 0;
+unsigned long g_last_sweep_done_ms = 0;
 unsigned long g_secondary_activity_ms = 0;
 unsigned long g_boot_details_until_ms = 0;
 uint32_t g_last_clock_minute_stamp = UINT32_MAX;
@@ -700,6 +701,14 @@ void handleInput() {
 
 void tickRadarAnimation() {
   if (g_radar_full_draw_pending) {
+    if (config::kRadarSweepTraceDebug) {
+      static unsigned long s_last_skip_log_ms = 0;
+      const unsigned long now = millis();
+      if (now - s_last_skip_log_ms >= 2000UL) {
+        Serial.println("[sweep] skip full_draw_pending");
+        s_last_skip_log_ms = now;
+      }
+    }
     return;
   }
   if (g_screen != AppScreen::Radar || !g_radar_visible) {
@@ -710,9 +719,20 @@ void tickRadarAnimation() {
   if (now - g_last_radar_frame_ms < ui::radar::kSweepFrameMs) {
     return;
   }
+
+  if (config::kRadarSweepTraceDebug && g_last_sweep_done_ms != 0) {
+    const unsigned long gap = now - g_last_sweep_done_ms;
+    if (gap > ui::radar::kSweepFrameMs * 2) {
+      Serial.printf("[sweep] gap %lums https=%d fetch_busy=%d fetch_ready=%d\n", gap,
+                    services::https::busy() ? 1 : 0, services::adsb::fetchInProgress() ? 1 : 0,
+                    services::adsb::fetchReady() ? 1 : 0);
+    }
+  }
+
   g_last_radar_frame_ms = now;
   PanelSession panel(tft);
   ui::radarDisplayRefreshSweep();
+  g_last_sweep_done_ms = millis();
 }
 
 bool canRecycleWifiForTlsMemory(unsigned long now) {
@@ -788,12 +808,20 @@ void tickAdsbFetch() {
     // Route cache on ADS-B poll only while flight detail is open (radar tags
     // do not use route fields; skipping enrich avoids LittleFS work on the loop).
     const bool enrich_routes = g_screen == AppScreen::FlightDetail;
+    const unsigned long process_start = millis();
     services::adsb::fetchProcessReady(enrich_routes);
+    const unsigned long process_ms = millis() - process_start;
+    if (on_radar && config::kRadarSweepTraceDebug && process_ms >= 5) {
+      Serial.printf("[sweep] fetch_ready process_ms=%lu ac=%u\n", process_ms,
+                    static_cast<unsigned>(services::adsb::aircraftCount()));
+    }
     if (g_radar_full_draw_pending && g_screen == AppScreen::Radar && g_radar_visible) {
       completeDeferredRadarDraw();
     } else if (on_radar) {
-      PanelSession panel(tft);
       ui::radarDisplayRefreshAircraft();
+      if (config::kRadarSweepTraceDebug) {
+        Serial.println("[sweep] aircraft_refresh noted");
+      }
     } else if (on_detail) {
       if (!detailDrawBlocked()) {
         PanelSession panel(tft);
@@ -885,6 +913,13 @@ void setup() {
   Serial.printf("[diag] boot reset=%s fw=%s\n", resetReasonName(), config::kFirmwareVersion);
   Serial.println("FlightScnr (T-Encoder Pro)");
 
+  // The ADS-B fetch worker is pinned to core 0 so its CPU-bound mbedTLS handshake
+  // never stalls the render loop on core 1. That heavy crypto, together with the
+  // WiFi/lwIP tasks, can starve core 0's idle task past the 5s task-watchdog window
+  // and reboot the device. We intentionally run heavy work there, so unsubscribe
+  // core 0's idle task from the watchdog (core 1's loop watchdog stays active).
+  disableCore0WDT();
+
   hardware::panelBootResolve();
   displayInit();
   inputInit();
@@ -963,8 +998,21 @@ void loop() {
       if (!g_radar_visible) {
         showRadar();
       } else {
-        tickAdsbFetch();
+        const unsigned long radar_loop_start = millis();
         tickRadarAnimation();
+        const unsigned long after_sweep = millis();
+        tickAdsbFetch();
+        const unsigned long after_fetch = millis();
+        if (config::kRadarSweepTraceDebug) {
+          const unsigned long total = after_fetch - radar_loop_start;
+          if (total >= 40) {
+            Serial.printf("[sweep] loop_stall total=%lums sweep=%lu fetch=%lu https=%d "
+                          "fetch_busy=%d\n",
+                          total, after_sweep - radar_loop_start, after_fetch - after_sweep,
+                          services::https::busy() ? 1 : 0,
+                          services::adsb::fetchInProgress() ? 1 : 0);
+          }
+        }
       }
     } else if (g_screen == AppScreen::FlightDetail) {
       tickAdsbFetch();

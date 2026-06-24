@@ -52,8 +52,14 @@ constexpr int kAircraftTagLabelHeightPx = 21;
 
 /** Radar sweep: one full rotation period (ms). */
 constexpr unsigned long kSweepPeriodMs = 6000;
-/** Target animation frame interval (ms). */
+/** Target animation frame interval (ms); partial spoke blits are ~15–25ms. */
 constexpr unsigned long kSweepFrameMs = 33;
+/** Loop gap (ms) after which the sweep pauses instead of catching up to wall clock. */
+constexpr unsigned long kSweepGapPauseMs = 80;
+/** Max simulated dt (ms) per painted frame (~2.9 deg at kSweepPeriodMs). */
+constexpr unsigned long kSweepMaxStepMs = 48;
+/** Spoke erase uses incremental union only when angle moved less than this (deg). */
+constexpr float kSweepIncrementalMaxDeg = 10.0f;
 /** Sweep line from center to this radius (px). */
 constexpr int kSweepRadiusPx = kCenterX - kBeyondRingScreenMarginPx;
 /** drawWideLine half-width for the sweep spoke (~2 px total). */
