@@ -52,6 +52,14 @@ class PlaneGfx {
   void startWrite();
   void endWrite();
 
+  /** Redirect all drawing into a full-screen RAM canvas, then blit it to the
+   *  panel in one aligned pass on endOffscreen(). Lets 1-bit glyphs render at
+   *  full resolution on panels that quantize direct pixel writes to a 2x2 grid
+   *  (CO5300 / pixelAlign2). No-op returning false when pixelAlign2 is off, a
+   *  panel write session is open, or the canvas allocation fails. */
+  bool beginOffscreen();
+  void endOffscreen();
+
   void draw16bitRGBBitmap(int16_t x, int16_t y, const uint16_t* bitmap, int16_t w,
                           int16_t h);
   void draw16bitRGBBitmap(int16_t x, int16_t y, const uint16_t* bitmap,
@@ -65,6 +73,14 @@ class PlaneGfx {
   bool hardware_panel_ = false;
   TextDatum datum_ = TextDatum::TopLeft;
   uint8_t write_depth_ = 0;
+
+  // Offscreen compose state (see beginOffscreen): a cached full-screen canvas
+  // that temporarily replaces gfx_ so draws bypass the panel's 2x2 alignment.
+  Arduino_GFX* offscreen_canvas_ = nullptr;
+  uint16_t* offscreen_buf_ = nullptr;
+  Arduino_GFX* saved_gfx_ = nullptr;
+  bool saved_hardware_panel_ = false;
+  bool offscreen_active_ = false;
 
   bool targetUsesPixelAlign2() const;
   void drawLinePixelAlign2(int16_t x0, int16_t y0, int16_t x1, int16_t y1,

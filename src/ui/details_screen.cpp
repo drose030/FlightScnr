@@ -96,6 +96,7 @@ int measureBlockHeight(const InfoLine* lines, size_t count) {
 }  // namespace
 
 void detailsScreenDraw(bool boot_splash) {
+  tft.beginOffscreen();
   const uint16_t bg = tft.color565(radar::kBgR, radar::kBgG, radar::kBgB);
   const uint16_t fg = tft.color565(255, 255, 255);
   const uint16_t label_fg = tft.color565(180, 200, 220);
@@ -149,6 +150,7 @@ void detailsScreenDraw(bool boot_splash) {
   }
 
   tft.setTextDatum(TextDatum::TopLeft);
+  tft.endOffscreen();
 }
 
 }  // namespace ui

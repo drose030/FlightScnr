@@ -509,6 +509,56 @@ void PlaneGfx::endWrite() {
   }
 }
 
+bool PlaneGfx::beginOffscreen() {
+  // Only worthwhile for the hardware panel when pixel writes are snapped to a
+  // 2x2 grid (CO5300). On other panels direct drawing is already crisp, so skip
+  // the buffer cost. Never reenter or hijack an already-open SPI session.
+  if (offscreen_active_ || gfx_ == nullptr || !hardware_panel_ || write_depth_ != 0) {
+    return false;
+  }
+  if (!Arduino_TFT::pixelAlign2()) {
+    return false;
+  }
+  const int16_t w = static_cast<int16_t>(gfx_->width());
+  const int16_t h = static_cast<int16_t>(gfx_->height());
+  if (offscreen_canvas_ == nullptr) {
+    const size_t bytes = static_cast<size_t>(w) * static_cast<size_t>(h) * sizeof(uint16_t);
+    offscreen_buf_ =
+        static_cast<uint16_t*>(heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (offscreen_buf_ == nullptr) {
+      offscreen_buf_ = static_cast<uint16_t*>(heap_caps_malloc(bytes, MALLOC_CAP_8BIT));
+    }
+    if (offscreen_buf_ == nullptr) {
+      return false;
+    }
+    offscreen_canvas_ = new SpriteCanvas(offscreen_buf_, w, h);
+    offscreen_canvas_->setTextWrap(false);
+  }
+  // Pose as a non-hardware target so every draw op takes the canvas code paths
+  // (identical to PlaneGfxSprite), which never touch Arduino_TFT pixelAlign2.
+  saved_gfx_ = gfx_;
+  saved_hardware_panel_ = hardware_panel_;
+  gfx_ = offscreen_canvas_;
+  hardware_panel_ = false;
+  offscreen_active_ = true;
+  return true;
+}
+
+void PlaneGfx::endOffscreen() {
+  if (!offscreen_active_) {
+    return;
+  }
+  gfx_ = saved_gfx_;
+  hardware_panel_ = saved_hardware_panel_;
+  offscreen_active_ = false;
+  if (offscreen_buf_ == nullptr) {
+    return;
+  }
+  const int16_t w = static_cast<int16_t>(gfx_->width());
+  const int16_t h = static_cast<int16_t>(gfx_->height());
+  blitRegionFromBuffer(0, 0, w, h, offscreen_buf_, w);
+}
+
 void PlaneGfx::panelFlushBitmap(int16_t x, int16_t y, int16_t w, int16_t h,
                                 const uint16_t* src) {
   if (gfx_ == nullptr || src == nullptr || w <= 0 || h <= 0) {

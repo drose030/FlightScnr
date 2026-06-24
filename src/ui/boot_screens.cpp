@@ -34,6 +34,7 @@ struct TextLine {
 };
 
 void drawTextBlock(uint16_t bg, uint16_t fg, const TextLine* lines, size_t count) {
+  tft.beginOffscreen();
   tft.fillScreen(bg);
   tft.setTextColor(fg, bg);
   tft.setTextDatum(TextDatum::MiddleCenter);
@@ -53,6 +54,7 @@ void drawTextBlock(uint16_t bg, uint16_t fg, const TextLine* lines, size_t count
     tft.drawString(lines[i].text, kCenterX, y + h / 2);
     y += h + kLineGap;
   }
+  tft.endOffscreen();
 }
 
 void fitSsidLine() {

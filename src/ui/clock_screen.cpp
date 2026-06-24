@@ -115,6 +115,7 @@ void drawTimeWithAmPm(int* y, const char* time_line, const char* ampm_line, uint
 }  // namespace
 
 void clockScreenDraw() {
+  tft.beginOffscreen();
   const uint16_t bg = tft.color565(radar::kBgR, radar::kBgG, radar::kBgB);
   const uint16_t fg = tft.color565(255, 255, 255);
   const uint16_t accent_fg = tft.color565(radar::kSweepR, radar::kSweepG, radar::kSweepB);
@@ -156,6 +157,7 @@ void clockScreenDraw() {
   drawCenterLine("Swipe left — Clock settings", &y, displayFontDetail(), hint_fg, bg);
 
   tft.setTextDatum(TextDatum::TopLeft);
+  tft.endOffscreen();
 }
 
 }  // namespace ui
