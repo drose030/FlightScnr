@@ -167,6 +167,11 @@ unsigned long s_last_fetch_ok_ms = 0;
 unsigned long s_fetch_busy_since_ms = 0;
 uint32_t s_fetch_fail_streak = 0;
 
+// adsb.fi returned HTTP 429 (rate limited). Tracked separately from the TLS
+// fail streak: rate limiting must not trigger a WiFi recycle, just a back-off.
+volatile bool s_fetch_rate_limited = false;
+volatile unsigned long s_rate_limit_until_ms = 0;
+
 double s_fetch_lat = 0.0;
 double s_fetch_lon = 0.0;
 float s_fetch_radius_km = 0.0f;
@@ -646,13 +651,22 @@ bool fetchUpdateBlocking(double center_lat, double center_lon, float fetch_radiu
   http.setReuse(false);
   const int code = http.GET();
   if (code != HTTP_CODE_OK) {
-    if (code < 0) {
-      services::route::noteTlsMemoryFailure();
-    }
-    if (code == HTTPC_ERROR_CONNECTION_REFUSED) {
-      Serial.println("[adsb] HTTP -1 (TLS connect failed, see start_ssl_client above)");
+    if (code == 429) {
+      // Rate limited: back off, but do NOT treat as a TLS failure (no WiFi recycle).
+      s_fetch_rate_limited = true;
+      s_rate_limit_until_ms = millis() + config::kAdsbRateLimitBackoffMs;
+      Serial.printf("[adsb] HTTP 429 (rate limited) — backing off %lums\n",
+                    config::kAdsbRateLimitBackoffMs);
     } else {
-      Serial.printf("[adsb] HTTP %d\n", code);
+      s_fetch_rate_limited = false;
+      if (code < 0) {
+        services::route::noteTlsMemoryFailure();
+      }
+      if (code == HTTPC_ERROR_CONNECTION_REFUSED) {
+        Serial.println("[adsb] HTTP -1 (TLS connect failed, see start_ssl_client above)");
+      } else {
+        Serial.printf("[adsb] HTTP %d\n", code);
+      }
     }
     http.end();
     client.stop();
@@ -696,9 +710,13 @@ void fetchWorkerTask(void* /*arg*/) {
       if (ok) {
         s_last_fetch_ok_ms = millis();
         s_fetch_fail_streak = 0;
+        s_fetch_rate_limited = false;
+        s_rate_limit_until_ms = 0;
         s_aircraft_staging_count = n;
         s_fetch_ready = true;
-      } else {
+      } else if (!s_fetch_rate_limited) {
+        // Genuine TLS/connection/parse failure feeds the WiFi-recycle streak;
+        // a 429 (rate limit) is handled by the back-off timer instead.
         ++s_fetch_fail_streak;
       }
       s_fetch_requested = false;
@@ -798,6 +816,10 @@ uint32_t lastFetchOkAgeMs() {
 }
 
 uint32_t fetchFailStreak() { return s_fetch_fail_streak; }
+
+bool rateLimitBackoffActive(unsigned long now_ms) {
+  return s_rate_limit_until_ms != 0 && now_ms < s_rate_limit_until_ms;
+}
 
 void fetchResetFailStreak() { s_fetch_fail_streak = 0; }
 

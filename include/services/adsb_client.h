@@ -66,6 +66,9 @@ uint32_t lastFetchOkAgeMs();
 /** Consecutive failed ADS-B polls since last success. */
 uint32_t fetchFailStreak();
 
+/** True while backing off after an adsb.fi HTTP 429 (rate limit). */
+bool rateLimitBackoffActive(unsigned long now_ms);
+
 /** Clear fail streak after a WiFi/TLS recycle. */
 void fetchResetFailStreak();
 

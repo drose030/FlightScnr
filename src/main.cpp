@@ -844,6 +844,16 @@ void tickAdsbFetch() {
   if (now - g_last_adsb_fetch_ms < adsbFetchPollIntervalMs(on_detail)) {
     return;
   }
+  if (services::adsb::rateLimitBackoffActive(now)) {
+    if (config::kSerialTraceDebug) {
+      static unsigned long s_last_ratelimit_log_ms = 0;
+      if (now - s_last_ratelimit_log_ms >= 5000UL) {
+        Serial.println("[fetch] defer: adsb.fi rate limited");
+        s_last_ratelimit_log_ms = now;
+      }
+    }
+    return;
+  }
   if (services::adsb::fetchInProgress()) {
     return;
   }

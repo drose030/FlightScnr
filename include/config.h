@@ -97,8 +97,11 @@ constexpr bool kGfxDebug = false;
 /** Serial [detail]/[fetch] trace for scroll, draw, enrich, TLS (disable once stable). */
 constexpr bool kSerialTraceDebug = true;
 
-/** Serial [sweep] radar animation / blit stall diagnostics (disable once stable). */
-constexpr bool kRadarSweepTraceDebug = true;
+/** Serial [sweep] radar animation / blit stall diagnostics (disable once stable).
+ *  Off by default: the per-frame Serial.printf costs ~5ms of a 33ms frame budget
+ *  and, under HTTPS load, dropped TX lines make the angle log look like it jumps
+ *  ~35° even though the sweep actually rendered every intermediate frame. */
+constexpr bool kRadarSweepTraceDebug = false;
 
 /** Full ADS-B aircraft table on serial (very verbose). */
 constexpr bool kAdsbVerboseAircraftLog = false;
@@ -120,6 +123,11 @@ constexpr unsigned long kTlsMemoryRecoverCooldownMs = 15000UL;
 
 /** ADS-B poll interval while TLS failures are stacking (ms). */
 constexpr unsigned long kAdsbFetchBackoffMs = 15000UL;
+
+/** Pause ADS-B polling this long after an adsb.fi HTTP 429 (rate limit).
+ *  A 429 is throttling, not a TLS fault, so we back off instead of recycling
+ *  WiFi (which would reconnect and immediately hammer the API again). */
+constexpr unsigned long kAdsbRateLimitBackoffMs = 15000UL;
 
 /** Defer ADS-B HTTPS if internal free heap is below this. */
 constexpr uint32_t kMinFreeHeapForAdsbHttps = 28000;
