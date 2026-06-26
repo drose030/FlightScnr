@@ -98,7 +98,7 @@ constexpr int kFactoryAltitudeFloorFt = 500;
 constexpr bool kGfxDebug = false;
 
 /** Serial [detail]/[fetch] trace for scroll, draw, enrich, TLS (disable once stable). */
-constexpr bool kSerialTraceDebug = true;
+constexpr bool kSerialTraceDebug = false;
 
 /** Serial [sweep] radar animation / blit stall diagnostics (disable once stable).
  *  Off by default: the per-frame Serial.printf costs ~5ms of a 33ms frame budget
@@ -110,7 +110,16 @@ constexpr bool kRadarSweepTraceDebug = false;
 constexpr bool kAdsbVerboseAircraftLog = false;
 
 /** Interval for [diag] serial diagnostics (ms). 0 = off. */
-constexpr unsigned long kDiagLogIntervalMs = 60000UL;  // 5 min (overnight dev); 60000 = 1 min
+constexpr unsigned long kDiagLogIntervalMs = 60000UL;  // 1 min
+
+/** Expanded overnight performance logging: richer [diag], [perf], [nav], sweep gaps. */
+constexpr bool kOvernightPerfLog = false;
+
+/** Log [perf] slow_loop when loop() exceeds this (ms). 0 = off. */
+constexpr unsigned long kDiagSlowLoopMs = 75UL;
+
+/** Log [perf] sweep_gap when inter-frame gap exceeds kSweepFrameMs * this. 0 = off. */
+constexpr unsigned kDiagSweepGapFrameMult = 3;
 
 /** Proactive WiFi/TLS refresh interval (0 = disabled). */
 constexpr unsigned long kTlsProactiveRefreshMs = 4UL * 60UL * 60UL * 1000UL;

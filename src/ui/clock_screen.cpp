@@ -102,8 +102,9 @@ void drawTimeWithAmPm(int* y, const char* time_line, const char* ampm_line, uint
     ampm_w = displayFontWidth(tft, ampm_style, ampm_line);
   }
 
+  constexpr int kTimeRowShiftX = 10;
   const int total_w = time_w + (ampm_w > 0 ? kAmPmGap + ampm_w : 0);
-  const int x = kCenterX - total_w / 2;
+  const int x = kCenterX - total_w / 2 + kTimeRowShiftX;
   const int bottom_y = *y + time_h;
 
   tft.setTextDatum(TextDatum::BottomLeft);

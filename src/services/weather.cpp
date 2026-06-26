@@ -462,6 +462,11 @@ bool fetchWeatherBlocking(WeatherData* out) {
 
 // Runs on the ADS-B fetch worker (see services::adsb::queueBackgroundJob).
 void weatherJob() {
+  const unsigned long job_start = millis();
+  if (config::kOvernightPerfLog) {
+    Serial.printf("[weather] job start heap=%u max_blk=%u\n", ESP.getFreeHeap(),
+                  ESP.getMaxAllocHeap());
+  }
   WeatherData fresh{};
   if (fetchWeatherBlocking(&fresh)) {
     if (!locationMatches(s_req_lat, s_req_lon, services::map_center::latitude(),
@@ -482,6 +487,10 @@ void weatherJob() {
     const unsigned long base = millis() + config::kWeatherRetryBackoffMs;
     if (s_retry_after_ms < base) {
       s_retry_after_ms = base;
+    }
+    if (config::kOvernightPerfLog) {
+      Serial.printf("[weather] job fail dur=%lums backoff=%lums heap=%u\n",
+                    millis() - job_start, retryBackoffMs() / 1000UL, ESP.getFreeHeap());
     }
   }
   s_pending = false;
@@ -629,7 +638,13 @@ void requestRefresh(bool force) {
   if (services::adsb::queueBackgroundJob(&weatherJob)) {
     s_last_attempt_ms = now;
     s_pending = true;
-  } else if (!hasData() && config::kSerialTraceDebug) {
+    if (config::kOvernightPerfLog) {
+      Serial.printf("[weather] fetch queued force=%d day_roll=%d loc_chg=%d heap=%u\n",
+                    force ? 1 : 0, day_rolled ? 1 : 0, location_changed ? 1 : 0,
+                    ESP.getFreeHeap());
+    }
+  } else if (!hasData() &&
+             (config::kSerialTraceDebug || config::kOvernightPerfLog)) {
     Serial.println("[weather] queue deferred (HTTPS worker busy)");
   }
 }
@@ -656,6 +671,17 @@ uint32_t dataAgeMs() {
     return UINT32_MAX;
   }
   return static_cast<uint32_t>(millis() - s_last_ok_ms);
+}
+
+uint32_t retryBackoffMs() {
+  if (s_retry_after_ms == 0) {
+    return 0;
+  }
+  const unsigned long now = millis();
+  if (now >= s_retry_after_ms) {
+    return 0;
+  }
+  return static_cast<uint32_t>(s_retry_after_ms - now);
 }
 
 int currentIconCode() {

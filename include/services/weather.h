@@ -68,6 +68,8 @@ bool hasData();
 const WeatherData& data();
 /** Milliseconds since the last successful fetch; UINT32_MAX when never. */
 uint32_t dataAgeMs();
+/** Milliseconds until a rate-limit retry is allowed; 0 when not backing off. */
+uint32_t retryBackoffMs();
 
 /** Full-day icon code for the current conditions (weatherCode*10, +1 at night). */
 int currentIconCode();

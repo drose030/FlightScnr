@@ -24,6 +24,12 @@ constexpr time_t kMinValidEpoch = 1600000000;
 int32_t s_tz_offset_sec = 0;
 bool s_use_24h = false;
 
+void stripLeadingZeroHour(char* out) {
+  if (out != nullptr && out[0] == '0' && out[1] != '\0') {
+    memmove(out, out + 1, strlen(out));
+  }
+}
+
 void persistOffset() {
   Preferences prefs;
   if (prefs.begin(kNs, false)) {
@@ -148,6 +154,7 @@ void formatTimeOfDay(char* out, size_t len) {
   } else {
     strftime(out, len, "%I:%M", &local);
   }
+  stripLeadingZeroHour(out);
 }
 
 void formatDateLine(char* out, size_t len) {
@@ -164,7 +171,7 @@ void formatDateLine(char* out, size_t len) {
   struct tm local {};
   const time_t now = time(nullptr);
   localtime_r(&now, &local);
-  strftime(out, len, "%a %b %d", &local);
+  strftime(out, len, "%a, %b %d", &local);
 }
 
 void formatClockFromEpoch(int64_t utc_epoch_sec, char* out, size_t len) {
@@ -185,6 +192,7 @@ void formatClockFromEpoch(int64_t utc_epoch_sec, char* out, size_t len) {
   } else {
     strftime(out, len, "%I:%M %p", &local);
   }
+  stripLeadingZeroHour(out);
 }
 
 void formatAmPm(char* out, size_t len) {
