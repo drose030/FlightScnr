@@ -64,6 +64,7 @@ unsigned long g_last_sweep_done_ms = 0;
 unsigned long g_secondary_activity_ms = 0;
 unsigned long g_clock_weather_activity_ms = 0;
 bool g_auto_idle_clock = false;
+bool g_hold_empty_radar = false;
 unsigned long g_boot_details_until_ms = 0;
 uint32_t g_last_clock_minute_stamp = UINT32_MAX;
 unsigned long g_last_heap_log_ms = 0;
@@ -434,8 +435,9 @@ void applySettingsLive() {
   Serial.println("[settings] applied live");
 }
 
-void returnToRadar(bool from_idle_timeout = false) {
+void returnToRadar(bool from_idle_timeout = false, bool hold_empty_radar = false) {
   g_auto_idle_clock = false;
+  g_hold_empty_radar = hold_empty_radar;
   if (g_screen == AppScreen::Clock || g_screen == AppScreen::Weather) {
     services::weather_icon::releaseBuffer();
   }
@@ -476,12 +478,14 @@ void openSettingsFromRadar() {
 
 void openClockFromRadar() {
   g_auto_idle_clock = false;
+  g_hold_empty_radar = false;
   g_screen = AppScreen::Clock;
   showClock();
   Serial.println("Screen: clock");
 }
 
 void openClockFromIdleRadar() {
+  g_hold_empty_radar = false;
   g_auto_idle_clock = true;
   g_screen = AppScreen::Clock;
   showClock();
@@ -579,9 +583,9 @@ void handleNavigation() {
   } else if (swipe == SwipeDown && g_screen == AppScreen::Details) {
     returnToRadar(false);
   } else if (swipe == SwipeUp && g_screen == AppScreen::Clock) {
-    returnToRadar(false);
+    returnToRadar(false, true);
   } else if (swipe == SwipeUp && g_screen == AppScreen::Weather) {
-    returnToRadar(false);
+    returnToRadar(false, true);
   } else if (swipe == SwipeRight && g_screen == AppScreen::Clock) {
     openWeatherFromClock();
   } else if (swipe == SwipeLeft && g_screen == AppScreen::Weather) {
@@ -685,6 +689,9 @@ void tickAutoIdleClock() {
   // Only count aircraft inside the outer ring (drawn as airplanes). Off-screen
   // beyond-ring blips should not pull us back to the radar.
   const size_t ac = ui::radarDisplayInRangeAircraftCount();
+  if (ac > 0) {
+    g_hold_empty_radar = false;
+  }
 
   if (g_auto_idle_clock && ac > 0 &&
       (g_screen == AppScreen::Clock || g_screen == AppScreen::Weather)) {
@@ -693,7 +700,8 @@ void tickAutoIdleClock() {
     return;
   }
 
-  if (!g_auto_idle_clock && g_screen == AppScreen::Radar && g_radar_visible && ac == 0) {
+  if (!g_auto_idle_clock && !g_hold_empty_radar && g_screen == AppScreen::Radar &&
+      g_radar_visible && ac == 0) {
     openClockFromIdleRadar();
   }
 }

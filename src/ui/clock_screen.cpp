@@ -10,6 +10,7 @@
 #include "services/clock_time.h"
 #include "services/weather.h"
 #include "services/weather_icon.h"
+#include "ui/radar_accent.h"
 #include "ui/radar_theme.h"
 #include "ui/temp_label.h"
 
@@ -24,7 +25,10 @@ constexpr int kSectionGap = 8;
 constexpr int kTimeDateGap = 14;
 /** On-screen size of the current-weather icon (downscaled from the native 96px
  *  forecast art) so the clock's time row stays inside the round display. */
-constexpr int kClockIconSize = 64;
+constexpr int kClockIconSize = 92;
+/** Shift the whole clock block up from the panel center so the bottom
+ *  sunrise/sunset row clears the round display's clipped lower corners. */
+constexpr int kClockTopBiasPx = 30;
 
 const int kCenterX = config::kDisplayWidth / 2;
 const int kCenterY = config::kDisplayHeight / 2;
@@ -227,31 +231,32 @@ void drawCurrentWeatherRow(int* y, uint16_t temp_fg, uint16_t bg) {
 
 void clockScreenDraw() {
   tft.beginOffscreen();
-  const uint16_t bg = tft.color565(radar::kBgR, radar::kBgG, radar::kBgB);
+  const uint16_t bg = tft.color565(0, 0, 0);
   const uint16_t fg = tft.color565(255, 255, 255);
-  const uint16_t accent_fg = tft.color565(radar::kSweepR, radar::kSweepG, radar::kSweepB);
+  uint8_t accent_r = 0;
+  uint8_t accent_g = 0;
+  uint8_t accent_b = 0;
+  radar::accentHighlightRgb(&accent_r, &accent_g, &accent_b);
+  const uint16_t accent_fg = tft.color565(accent_r, accent_g, accent_b);
   const uint16_t ampm_fg = accent_fg;
   const uint16_t hint_fg = tft.color565(120, 140, 160);
 
   char time_line[16];
   char ampm_line[8];
   char date_line[24];
-  char tz_line[16];
   services::clock::formatTimeOfDay(time_line, sizeof(time_line));
   services::clock::formatAmPm(ampm_line, sizeof(ampm_line));
   services::clock::formatDateLine(date_line, sizeof(date_line));
-  services::clock::formatTimezoneLabel(tz_line, sizeof(tz_line));
 
   const int time_h = displayFontHeight(tft, displayFontClockTime());
   const int date_h = displayFontHeight(tft, displayFontClockDate()) + kLineGap;
-  const int tz_h = displayFontHeight(tft, displayFontDetail()) + kLineGap;
   const bool show_weather = services::weather::hasData();
   const int weather_h = show_weather ? weatherBlockHeight() : 0;
-  const int block_h = time_h + kTimeDateGap + date_h + tz_h + weather_h;
+  const int block_h = time_h + kTimeDateGap + date_h + weather_h;
 
   tft.fillScreen(bg);
 
-  int y = kCenterY - block_h / 2;
+  int y = kCenterY - block_h / 2 - kClockTopBiasPx;
   if (y < kBezelInsetPx) {
     y = kBezelInsetPx;
   }
@@ -260,8 +265,6 @@ void clockScreenDraw() {
 
   y += kTimeDateGap;
   drawCenterLine(date_line, &y, displayFontClockDate(), fg, bg);
-  y += kSectionGap - kLineGap;
-  drawCenterLine(tz_line, &y, displayFontDetail(), hint_fg, bg);
 
   if (show_weather) {
     y += kSectionGap;

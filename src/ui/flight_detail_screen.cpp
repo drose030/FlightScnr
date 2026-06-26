@@ -878,7 +878,7 @@ void tickNoApisAlternateLabels(unsigned long now_ms) {
     return;
   }
 
-  const uint16_t bg = tft.color565(radar::kBgR, radar::kBgG, radar::kBgB);
+  const uint16_t bg = tft.color565(0, 0, 0);
   const uint16_t route_fg = tft.color565(100, 220, 255);
   const UiTextStyle body_style = displayFontBody();
 
@@ -988,7 +988,7 @@ void flightDetailDraw() {
   if (!ensureDetailSprite()) {
     return;
   }
-  const uint16_t bg = tft.color565(radar::kBgR, radar::kBgG, radar::kBgB);
+  const uint16_t bg = tft.color565(0, 0, 0);
   const uint16_t fg = tft.color565(255, 255, 255);
   const uint16_t label_fg = tft.color565(180, 200, 220);
   const uint16_t route_fg = tft.color565(100, 220, 255);
@@ -1142,7 +1142,7 @@ void flightDetailRefresh() {
         flightDetailDraw();
         return;
       }
-      const uint16_t bg = tft.color565(radar::kBgR, radar::kBgG, radar::kBgB);
+      const uint16_t bg = tft.color565(0, 0, 0);
       const uint16_t fg = tft.color565(255, 255, 255);
       const uint16_t hint_fg = tft.color565(120, 140, 160);
       const UiTextStyle detail_style = displayFontDetail();
@@ -1188,7 +1188,7 @@ void flightDetailRefresh() {
     return;
   }
 
-  const uint16_t bg = tft.color565(radar::kBgR, radar::kBgG, radar::kBgB);
+  const uint16_t bg = tft.color565(0, 0, 0);
   const uint16_t fg = tft.color565(255, 255, 255);
   const uint16_t hint_fg = tft.color565(120, 140, 160);
   const UiTextStyle detail_style = displayFontDetail();

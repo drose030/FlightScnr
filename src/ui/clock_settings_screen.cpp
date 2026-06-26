@@ -8,6 +8,7 @@
 #include "hardware/display.h"
 #include "hardware/display_font.h"
 #include "services/clock_time.h"
+#include "ui/radar_accent.h"
 #include "ui/radar_theme.h"
 
 namespace ui {
@@ -117,12 +118,15 @@ void clockSettingsCycleFocus() {
 
 void clockSettingsScreenDraw() {
   tft.beginOffscreen();
-  const uint16_t bg = tft.color565(radar::kBgR, radar::kBgG, radar::kBgB);
+  const uint16_t bg = tft.color565(0, 0, 0);
   const uint16_t fg = tft.color565(255, 255, 255);
   const uint16_t label_fg = tft.color565(180, 200, 220);
   const uint16_t hint_fg = tft.color565(120, 140, 160);
-  const uint16_t active_fg =
-      tft.color565(radar::kSweepR, radar::kSweepG, radar::kSweepB);
+  uint8_t accent_r = 0;
+  uint8_t accent_g = 0;
+  uint8_t accent_b = 0;
+  radar::accentHighlightRgb(&accent_r, &accent_g, &accent_b);
+  const uint16_t active_fg = tft.color565(accent_r, accent_g, accent_b);
 
   char tz_line[32];
   char fmt_line[28];

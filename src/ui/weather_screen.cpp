@@ -12,6 +12,7 @@
 #include "services/clock_time.h"
 #include "services/weather.h"
 #include "services/weather_icon.h"
+#include "ui/radar_accent.h"
 #include "ui/radar_theme.h"
 #include "ui/temp_label.h"
 
@@ -112,10 +113,14 @@ void drawForecast(const services::weather::WeatherData& wx, uint16_t fg, uint16_
 
 void weatherScreenDraw() {
   tft.beginOffscreen();
-  const uint16_t bg = tft.color565(radar::kBgR, radar::kBgG, radar::kBgB);
+  const uint16_t bg = tft.color565(0, 0, 0);
   const uint16_t fg = tft.color565(255, 255, 255);
   const uint16_t dim = tft.color565(150, 165, 180);
-  const uint16_t accent = tft.color565(radar::kSweepR, radar::kSweepG, radar::kSweepB);
+  uint8_t accent_r = 0;
+  uint8_t accent_g = 0;
+  uint8_t accent_b = 0;
+  radar::accentHighlightRgb(&accent_r, &accent_g, &accent_b);
+  const uint16_t accent = tft.color565(accent_r, accent_g, accent_b);
 
   tft.fillScreen(bg);
   drawCentered("Forecast", 48, displayFontClockDate(), fg, bg);

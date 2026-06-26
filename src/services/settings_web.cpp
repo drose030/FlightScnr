@@ -20,6 +20,7 @@
 #include "services/settings_apply.h"
 #include "services/weather.h"
 #include "ui/display_prefs.h"
+#include "ui/radar_accent.h"
 #include "ui/radar_scale.h"
 
 namespace {
@@ -117,6 +118,18 @@ void sendLocationErrorPage() {
   s_server->send(400, "text/html; charset=utf-8", page);
 }
 
+void appendAccentOptions(char* buf, size_t len, size_t* used) {
+  const uint8_t current = ui::radar::accentColorIndex();
+  for (uint8_t i = 0; i < ui::radar::kRadarAccentCount; ++i) {
+    const int n = snprintf(buf + *used, len - *used, "<option value=\"%u\"%s>%s</option>",
+                           static_cast<unsigned>(i), (i == current) ? " selected" : "",
+                           ui::radar::accentColorNameAt(i));
+    if (n > 0) {
+      *used += static_cast<size_t>(n);
+    }
+  }
+}
+
 void appendRangeOptions(char* buf, size_t len, size_t* used) {
   for (uint8_t i = 0; i < ui::radar::kScaleBandCount; ++i) {
     const ui::radar::ScaleBand& p = ui::radar::kScaleBands[i];
@@ -189,6 +202,18 @@ void handleSettingsPage() {
       ui::displayPrefsSweepLineEnabled() ? " checked" : "");
   if (sweep_n > 0) {
     used += static_cast<size_t>(sweep_n);
+  }
+
+  const int accent_lbl = snprintf(page + used, kSettingsPageCap - used,
+                                  "<label for=\"radar_accent\">Radar color theme</label>"
+                                  "<select id=\"radar_accent\" name=\"radar_accent\">");
+  if (accent_lbl > 0) {
+    used += static_cast<size_t>(accent_lbl);
+  }
+  appendAccentOptions(page, kSettingsPageCap, &used);
+  const int accent_end = snprintf(page + used, kSettingsPageCap - used, "</select>");
+  if (accent_end > 0) {
+    used += static_cast<size_t>(accent_end);
   }
 
   const unsigned long detail_ms = ui::displayPrefsFlightDetailTimeoutMs();
@@ -507,6 +532,7 @@ void handleSave() {
   services::apikeys::saveWeatherKeyFromForm(s_server->arg("weather_key").c_str());
   services::weather::saveUnitsFromForm(s_server->arg("weather_units").c_str());
   ui::displayPrefsSaveClockWeatherTimeoutFromForm(s_server->arg("clock_timeout").c_str());
+  ui::radar::accentSaveFromForm(s_server->arg("radar_accent").c_str());
 
   Serial.printf("Settings web save (lat/lon %s)\n", loc_ok ? "ok" : "invalid");
 

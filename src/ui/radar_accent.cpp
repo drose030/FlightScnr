@@ -2,6 +2,9 @@
 
 #include <Preferences.h>
 
+#include <cstdlib>
+#include <cstring>
+
 namespace ui::radar {
 
 namespace {
@@ -53,6 +56,33 @@ const char* accentColorName() {
     return kNames[static_cast<uint8_t>(kDefaultAccent)];
   }
   return kNames[idx];
+}
+
+uint8_t accentColorIndex() { return static_cast<uint8_t>(s_accent); }
+
+const char* accentColorNameAt(uint8_t index) {
+  if (index >= kRadarAccentCount) {
+    return "";
+  }
+  return kNames[index];
+}
+
+bool accentSaveFromForm(const char* value) {
+  if (value == nullptr || value[0] == '\0') {
+    return false;
+  }
+  char* end = nullptr;
+  const long idx = strtol(value, &end, 10);
+  if (end == value || idx < 0 || idx >= static_cast<long>(kRadarAccentCount)) {
+    return false;
+  }
+  const RadarAccentColor next = static_cast<RadarAccentColor>(idx);
+  if (next != s_accent) {
+    s_accent = next;
+    persistAccent();
+    Serial.printf("Radar accent (web): %s\n", accentColorName());
+  }
+  return true;
 }
 
 AccentRgb accentPalette() {
