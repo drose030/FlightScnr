@@ -18,6 +18,7 @@
 #include "services/map_center.h"
 #include "services/route_cache_store.h"
 #include "services/settings_apply.h"
+#include "services/weather.h"
 #include "ui/display_prefs.h"
 #include "ui/radar_scale.h"
 
@@ -424,6 +425,26 @@ void handleSettingsPage() {
     used += static_cast<size_t>(fr_lim);
   }
 
+  services::apikeys::maskedWeather(masked, sizeof(masked));
+  const int wx_n = snprintf(
+      page + used, kSettingsPageCap - used,
+      "<h2 style=\"font-size:1rem;margin:1.25rem 0 .35rem\">Weather (Tomorrow.io)</h2>"
+      "<label for=\"weather_key\">Tomorrow.io API key (%s)</label>"
+      "<input id=\"weather_key\" name=\"weather_key\" type=\"password\" "
+      "autocomplete=\"off\" placeholder=\"paste key\">"
+      "<label for=\"weather_units\">Units</label>"
+      "<select id=\"weather_units\" name=\"weather_units\">"
+      "<option value=\"metric\"%s>Metric (&deg;C)</option>"
+      "<option value=\"imperial\"%s>Imperial (&deg;F)</option>"
+      "</select>"
+      "<p class=\"note\">Current weather shows on the clock screen; swipe right for "
+      "the 3-day forecast.</p>",
+      masked, services::weather::useImperial() ? "" : " selected",
+      services::weather::useImperial() ? " selected" : "");
+  if (wx_n > 0) {
+    used += static_cast<size_t>(wx_n);
+  }
+
   const int cache_n = snprintf(
       page + used, kSettingsPageCap - used,
       "<h2 style=\"font-size:1rem;margin:1.25rem 0 .35rem\">Route cache</h2>"
@@ -463,6 +484,9 @@ void handleSave() {
       s_server->arg("fr24_cost_usd").c_str(), s_server->arg("ui_beep").c_str(),
       s_server->arg("beep_tone").c_str(), s_server->arg("bright_pct").c_str(),
       s_server->arg("show_sweep").c_str(), s_server->arg("detail_timeout").c_str());
+
+  services::apikeys::saveWeatherKeyFromForm(s_server->arg("weather_key").c_str());
+  services::weather::saveUnitsFromForm(s_server->arg("weather_units").c_str());
 
   Serial.printf("Settings web save (lat/lon %s)\n", loc_ok ? "ok" : "invalid");
 

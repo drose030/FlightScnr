@@ -129,15 +129,21 @@ constexpr unsigned long kAdsbFetchBackoffMs = 15000UL;
  *  WiFi (which would reconnect and immediately hammer the API again). */
 constexpr unsigned long kAdsbRateLimitBackoffMs = 15000UL;
 
-/** Defer ADS-B HTTPS if internal free heap is below this. */
-constexpr uint32_t kMinFreeHeapForAdsbHttps = 28000;
-/** ADS-B TLS + JSON — 16KB contiguous (max_blk often ~18KB after detail/web). */
-constexpr uint32_t kMinContiguousHeapForAdsbTls = 16384;
+/** Defer ADS-B HTTPS if internal free heap is below this.
+ *  Raised from 28000: a large response (13+ aircraft) consumed ~27KB of internal
+ *  heap mid-fetch and drove `min` to 628 bytes, corrupting the SPI driver state
+ *  (spi_device_polling_end panic). This floor keeps ~12KB headroom after the
+ *  peak so an allocation can never return null underneath the display driver. */
+constexpr uint32_t kMinFreeHeapForAdsbHttps = 42000;
+/** ADS-B TLS + JSON — require a healthy contiguous block too. */
+constexpr uint32_t kMinContiguousHeapForAdsbTls = 20000;
 
-/** Defer route API HTTPS if internal free heap is below this. */
-constexpr uint32_t kMinFreeHeapForRouteHttps = 24000;
-/** Route API TLS + JSON — same class as ADS-B; max_blk often ~19KB on detail screen. */
-constexpr uint32_t kMinContiguousHeapForRouteTls = 16384;
+/** Defer route API HTTPS if internal free heap is below this.
+ *  Raised from 24000 for the same reason: route enrichment polls run on the
+ *  flight-detail screen alongside the full ADS-B response in memory. */
+constexpr uint32_t kMinFreeHeapForRouteHttps = 38000;
+/** Route API TLS + JSON — require a healthy contiguous block too. */
+constexpr uint32_t kMinContiguousHeapForRouteTls = 18000;
 /** Target max_blk before opening another TLS session (after prior session ends). */
 constexpr uint32_t kMinContiguousHeapForTlsReconnect = 40000;
 
@@ -147,6 +153,39 @@ constexpr uint32_t kDetailApiTimeoutMs = 4000;
 constexpr unsigned long kDetailWorkerStallMs = 12000UL;
 /** Faster recovery when the worker is enriching a callsign you scrolled past. */
 constexpr unsigned long kDetailWorkerStaleStallMs = 6000UL;
+
+// --- Weather (Tomorrow.io) ---
+/** Tomorrow.io API host (HTTPS). One realtime + one daily-forecast GET per refresh. */
+constexpr char kWeatherApiHost[] = "api.tomorrow.io";
+/** Refresh weather at most this often while the clock screen is left on (ms). */
+constexpr unsigned long kWeatherClockRefreshMs = 30UL * 60UL * 1000UL;  // 30 min
+/** Re-fetch on screen open only if the cache is older than this (ms). */
+constexpr unsigned long kWeatherStaleMs = 30UL * 60UL * 1000UL;  // 30 min
+/** Connect/read timeout for a weather request (ms). */
+constexpr uint32_t kWeatherApiTimeoutMs = 6000;
+/** After a failed weather fetch, wait this long before retrying (ms).
+ *  Weather is low priority and shares TLS/heap with ADS-B, so failures back off
+ *  instead of hammering connects (which fragments the heap and spams -32512). */
+constexpr unsigned long kWeatherRetryBackoffMs = 60000UL;
+/** Longer back-off after an HTTP 429 (Tomorrow.io free tier ~25 req/hour). */
+constexpr unsigned long kWeatherRateLimitBackoffMs = 5UL * 60UL * 1000UL;  // 5 min
+/** Minimum spacing between weather fetch attempts — throttles rapid screen
+ *  switching so a burst of opens can't blow the API's per-second limit. */
+constexpr unsigned long kWeatherMinFetchIntervalMs = 20000UL;  // 20 s
+/** Weather is the lowest-priority HTTPS user, so it only opens a TLS session
+ *  when there is real headroom — a marginal heap fails the mbedTLS SHA buffer
+ *  allocation (esp-sha "Failed to allocate buf memory" / -32512). Higher than
+ *  the ADS-B bar so weather defers to the clock idling instead of contending. */
+constexpr uint32_t kMinFreeHeapForWeather = 36000;
+constexpr uint32_t kMinContiguousHeapForWeather = 20000;
+/** Default unit system when the user has not overridden it (true = °F/imperial). */
+constexpr bool kWeatherUseImperialDefault = false;
+
+// --- FreeRTOS core affinity (ESP32-S3: 0 = PRO_CPU / WiFi, 1 = APP_CPU / UI) ---
+/** HTTPS workers, WiFi event callbacks, mbedTLS — keep off the render loop core. */
+constexpr uint8_t kCoreNetwork = 0;
+/** Arduino loop(), display compositing, input — never block on TLS here. */
+constexpr uint8_t kCoreUi = 1;
 
 // --- UI colors (RGB565) — status screens ---
 constexpr uint16_t kColorBlack = 0x0000;

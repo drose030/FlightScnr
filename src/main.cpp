@@ -24,6 +24,8 @@
 #include "services/map_center.h"
 #include "services/route_lookup.h"
 #include "services/settings_web.h"
+#include "services/weather.h"
+#include "services/weather_icon.h"
 #include "services/settings_apply.h"
 #include "services/wifi_setup.h"
 #include "ui/clock_screen.h"
@@ -36,6 +38,7 @@
 #include "ui/radar_display.h"
 #include "ui/radar_scale.h"
 #include "ui/radar_theme.h"
+#include "ui/weather_screen.h"
 
 namespace {
 
@@ -46,6 +49,7 @@ enum class AppScreen : uint8_t {
   Details,
   Clock,
   ClockSettings,
+  Weather,
 };
 
 AppScreen g_screen = AppScreen::Radar;
@@ -102,6 +106,8 @@ const char* screenName(AppScreen screen) {
       return "clock";
     case AppScreen::ClockSettings:
       return "clock_set";
+    case AppScreen::Weather:
+      return "weather";
     default:
       return "?";
   }
@@ -356,6 +362,7 @@ void showSettings() {
 
 void showClock() {
   ui::flightDetailReleaseSprite();
+  services::weather::requestOnScreenOpen();
   ui::clockScreenDraw();
   g_radar_visible = false;
   g_last_clock_minute_stamp = services::clock::localMinuteStamp();
@@ -364,6 +371,13 @@ void showClock() {
 void showClockSettings() {
   ui::flightDetailReleaseSprite();
   ui::clockSettingsScreenDraw();
+  g_radar_visible = false;
+}
+
+void showWeather() {
+  ui::flightDetailReleaseSprite();
+  services::weather::requestOnScreenOpen();
+  ui::weatherScreenDraw();
   g_radar_visible = false;
 }
 
@@ -403,11 +417,17 @@ void applySettingsLive() {
     case AppScreen::ClockSettings:
       showClockSettings();
       break;
+    case AppScreen::Weather:
+      showWeather();
+      break;
   }
   Serial.println("[settings] applied live");
 }
 
 void returnToRadar(bool from_idle_timeout = false) {
+  if (g_screen == AppScreen::Clock || g_screen == AppScreen::Weather) {
+    services::weather_icon::releaseBuffer();
+  }
   if (g_screen == AppScreen::FlightDetail) {
     releaseHttpsPressureMemory();
   } else {
@@ -454,6 +474,12 @@ void openDetailsFromRadar() {
   noteSecondaryActivity();
   showDetails();
   Serial.println("Screen: details");
+}
+
+void openWeatherFromClock() {
+  g_screen = AppScreen::Weather;
+  showWeather();
+  Serial.println("Screen: weather");
 }
 
 void openClockSettingsFromClock() {
@@ -520,7 +546,7 @@ void handleNavigation() {
 
   const SwipeGesture swipe = inputConsumeSwipe();
   if (swipe != SwipeNone && g_screen != AppScreen::Radar &&
-      g_screen != AppScreen::Clock) {
+      g_screen != AppScreen::Clock && g_screen != AppScreen::Weather) {
     noteSecondaryActivity();
   }
   if (swipe == SwipeDown && g_screen == AppScreen::Radar) {
@@ -531,6 +557,14 @@ void handleNavigation() {
     returnToRadar(false);
   } else if (swipe == SwipeUp && g_screen == AppScreen::Clock) {
     returnToRadar(false);
+  } else if (swipe == SwipeUp && g_screen == AppScreen::Weather) {
+    returnToRadar(false);
+  } else if (swipe == SwipeRight && g_screen == AppScreen::Clock) {
+    openWeatherFromClock();
+  } else if (swipe == SwipeLeft && g_screen == AppScreen::Weather) {
+    g_screen = AppScreen::Clock;
+    showClock();
+    Serial.println("Screen: clock");
   } else if (swipe == SwipeLeft && g_screen == AppScreen::Clock) {
     openClockSettingsFromClock();
   } else if (swipe == SwipeRight && g_screen == AppScreen::ClockSettings) {
@@ -586,7 +620,8 @@ void tickSecondaryScreenTimeout() {
   if (bootDetailsActive()) {
     return;
   }
-  if (g_screen == AppScreen::Radar || g_screen == AppScreen::Clock) {
+  if (g_screen == AppScreen::Radar || g_screen == AppScreen::Clock ||
+      g_screen == AppScreen::Weather) {
     return;
   }
   if (g_screen == AppScreen::FlightDetail) {
@@ -618,6 +653,25 @@ void tickClockDisplay() {
   }
   g_last_clock_minute_stamp = stamp;
   ui::clockScreenDraw();
+}
+
+// Weather is fetched only while the clock or forecast screen is open: a missing
+// or >30-min-stale cache triggers a background refresh, and a finished fetch
+// redraws the live screen. No background polling on any other screen.
+void tickWeather() {
+  if (g_screen != AppScreen::Clock && g_screen != AppScreen::Weather) {
+    return;
+  }
+  if (WiFi.status() == WL_CONNECTED) {
+    services::weather::requestRefresh(false);
+  }
+  if (services::weather::processReady()) {
+    if (g_screen == AppScreen::Clock) {
+      showClock();
+    } else {
+      showWeather();
+    }
+  }
 }
 
 void handleInput() {
@@ -944,11 +998,13 @@ void setup() {
   ui::displayPrefsBootLoad();
   services::adsb::trafficFilterBootLoad();
   services::clock::bootLoad();
+  services::weather::bootLoad();
 
   if (wifiSetupConnect()) {
     services::clock::startNtp();
     services::route::init();
     services::adsb::fetchInit();
+    services::weather::bootSanityCheck();
     settingsSetSavedCallback(applySettingsLive);
     g_last_adsb_fetch_ms = 0;
     g_last_tls_proactive_refresh_ms = millis();
@@ -966,6 +1022,7 @@ void loop() {
   tickBootDetailsSplash();
   tickSecondaryScreenTimeout();
   tickClockDisplay();
+  tickWeather();
   handleInput();
   settingsWebPoll();
   services::route::tickCacheFlush(millis());

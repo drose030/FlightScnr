@@ -22,6 +22,9 @@ void toggleHourFormat();
 
 void formatTimezoneLabel(char* out, size_t len);
 void formatTimeOfDay(char* out, size_t len);
+/** Format a UTC epoch (seconds) as local "H:MM[ AM/PM]" using the saved offset
+ *  and 12/24-hour preference. Writes "--:--" when the epoch is invalid. */
+void formatClockFromEpoch(int64_t utc_epoch_sec, char* out, size_t len);
 void formatDateLine(char* out, size_t len);
 /** "AM"/"PM" when 12-hour mode; empty string in 24-hour mode. */
 void formatAmPm(char* out, size_t len);

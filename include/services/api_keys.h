@@ -25,6 +25,13 @@ void saveLimitsFromForm(const char* airlabs_max_calls, const char* flightaware_m
 bool hasAirLabs();
 bool hasFlightAware();
 bool hasFr24();
+bool hasWeather();
+
+/** Tomorrow.io weather key (single key). Returns "" when unset. */
+const char* weatherKey();
+/** Persist a new weather key from the web form; ignores null/empty. */
+bool saveWeatherKeyFromForm(const char* weather);
+void maskedWeather(char* out, size_t len);
 
 bool useAirLabs();
 bool useFlightAware();

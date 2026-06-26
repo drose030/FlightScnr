@@ -1611,7 +1611,7 @@ void ensureDetailWorker() {
     return;
   }
   xTaskCreatePinnedToCore(detailWorkerTask, "route_detail", 16384, nullptr, 1,
-                          &s_detail_task, 1);
+                          &s_detail_task, config::kCoreNetwork);
 }
 
 void queueDetailEnrichment(const char* callsign) {

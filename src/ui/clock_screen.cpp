@@ -8,6 +8,8 @@
 #include "hardware/display.h"
 #include "hardware/display_font.h"
 #include "services/clock_time.h"
+#include "services/weather.h"
+#include "services/weather_icon.h"
 #include "ui/radar_theme.h"
 
 namespace ui {
@@ -112,6 +114,71 @@ void drawTimeWithAmPm(int* y, const char* time_line, const char* ampm_line, uint
   *y += time_h + kLineGap;
 }
 
+// Visible width of "<value>°<unit>" with the degree drawn as a small ring.
+constexpr int kDegRingR = 3;
+constexpr int kDegGap1 = 3;
+constexpr int kDegGap2 = 2;
+
+int tempVisibleWidth(UiTextStyle style, int value, char unit) {
+  char num[8];
+  snprintf(num, sizeof(num), "%d", value);
+  char us[2] = {unit, '\0'};
+  displayFontApply(tft, style);
+  return tft.textWidth(num) + kDegGap1 + (2 * kDegRingR + 1) + kDegGap2 + tft.textWidth(us);
+}
+
+// Draw "<value>°<unit>" with top-left at (x, top_y); returns width drawn.
+int drawTempAt(int x, int top_y, int value, char unit, UiTextStyle style, uint16_t fg,
+               uint16_t bg) {
+  char num[8];
+  snprintf(num, sizeof(num), "%d", value);
+  char us[2] = {unit, '\0'};
+  displayFontApply(tft, style);
+  const int numw = tft.textWidth(num);
+  const int uw = tft.textWidth(us);
+  const int ringw = 2 * kDegRingR + 1;
+  tft.setTextDatum(TextDatum::TopLeft);
+  tft.setTextColor(fg, bg);
+  tft.drawString(num, x, top_y);
+  tft.drawCircle(x + numw + kDegGap1 + kDegRingR, top_y + kDegRingR + 2, kDegRingR, fg);
+  tft.drawString(us, x + numw + kDegGap1 + ringw + kDegGap2, top_y);
+  return numw + kDegGap1 + ringw + kDegGap2 + uw;
+}
+
+int currentWeatherRowHeight() {
+  if (!services::weather::hasData()) {
+    return 0;
+  }
+  const int icon_h =
+      services::weather_icon::iconHeight(services::weather::currentIconCode());
+  const int temp_h = displayFontHeight(tft, displayFontBody());
+  return (icon_h > temp_h ? icon_h : temp_h);
+}
+
+void drawCurrentWeatherRow(int* y, uint16_t accent, uint16_t bg) {
+  const services::weather::WeatherData& wx = services::weather::data();
+  const int code = services::weather::currentIconCode();
+  const int icon_w = services::weather_icon::iconWidth(code);
+  const int icon_h = services::weather_icon::iconHeight(code);
+  const int temp = static_cast<int>(std::lround(wx.current_temp));
+  const char unit = wx.imperial ? 'F' : 'C';
+  const UiTextStyle ts = displayFontBody();
+  const int temp_w = tempVisibleWidth(ts, temp, unit);
+  const int temp_h = displayFontHeight(tft, ts);
+  const int row_h = icon_h > temp_h ? icon_h : temp_h;
+  const int icon_gap = icon_w > 0 ? 8 : 0;
+  const int row_w = icon_w + icon_gap + temp_w;
+  const int start_x = kCenterX - row_w / 2;
+
+  if (icon_w > 0) {
+    services::weather_icon::drawIcon(tft, code, start_x + icon_w / 2,
+                                     *y + (row_h - icon_h) / 2, bg);
+  }
+  drawTempAt(start_x + icon_w + icon_gap, *y + (row_h - temp_h) / 2, temp, unit, ts, accent,
+             bg);
+  *y += row_h + kLineGap;
+}
+
 }  // namespace
 
 void clockScreenDraw() {
@@ -134,9 +201,11 @@ void clockScreenDraw() {
   const int time_h = displayFontHeight(tft, displayFontClockTime());
   const int date_h = displayFontHeight(tft, displayFontClockDate()) + kLineGap;
   const int tz_h = displayFontHeight(tft, displayFontDetail()) + kLineGap;
-  const int hints_h =
-      displayFontHeight(tft, displayFontDetail()) * 2 + kLineGap + kHintsTopGap;
-  const int block_h = time_h + kTimeDateGap + date_h + tz_h + hints_h;
+  const int detail_h = displayFontHeight(tft, displayFontDetail());
+  const int hints_h = detail_h * 3 + kLineGap * 2 + kHintsTopGap;
+  const bool show_weather = services::weather::hasData();
+  const int weather_h = show_weather ? currentWeatherRowHeight() + kSectionGap : 0;
+  const int block_h = time_h + kTimeDateGap + date_h + tz_h + weather_h + hints_h;
 
   tft.fillScreen(bg);
 
@@ -151,9 +220,16 @@ void clockScreenDraw() {
   drawCenterLine(date_line, &y, displayFontClockDate(), fg, bg);
   y += kSectionGap - kLineGap;
   drawCenterLine(tz_line, &y, displayFontDetail(), hint_fg, bg);
+
+  if (show_weather) {
+    y += kSectionGap;
+    drawCurrentWeatherRow(&y, accent_fg, bg);
+  }
+
   y += kHintsTopGap;
 
   drawCenterLine("Swipe up — Radar", &y, displayFontDetail(), hint_fg, bg);
+  drawCenterLine("Swipe right — Forecast", &y, displayFontDetail(), hint_fg, bg);
   drawCenterLine("Swipe left — Clock settings", &y, displayFontDetail(), hint_fg, bg);
 
   tft.setTextDatum(TextDatum::TopLeft);

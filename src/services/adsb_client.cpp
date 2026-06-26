@@ -163,6 +163,10 @@ volatile bool s_fetch_requested = false;
 volatile bool s_fetch_ready = false;
 volatile bool s_fetch_busy = false;
 
+// One-shot job borrowed onto this worker (see queueBackgroundJob).
+volatile BackgroundJob s_bg_job = nullptr;
+volatile bool s_bg_job_busy = false;
+
 unsigned long s_last_fetch_ok_ms = 0;
 unsigned long s_fetch_busy_since_ms = 0;
 uint32_t s_fetch_fail_streak = 0;
@@ -701,7 +705,16 @@ bool fetchUpdateBlocking(double center_lat, double center_lon, float fetch_radiu
 
 void fetchWorkerTask(void* /*arg*/) {
   for (;;) {
-    if (s_fetch_requested) {
+    // A queued one-shot job (weather) takes priority over the next ADS-B poll:
+    // it is user-initiated and rare, and on the radar screen ADS-B re-requests
+    // every cycle, so checking it first is the only way weather ever gets a turn.
+    if (s_bg_job != nullptr) {
+      s_bg_job_busy = true;
+      BackgroundJob job = s_bg_job;
+      job();
+      s_bg_job = nullptr;
+      s_bg_job_busy = false;
+    } else if (s_fetch_requested) {
       s_fetch_busy = true;
       s_fetch_busy_since_ms = millis();
       size_t n = 0;
@@ -738,7 +751,29 @@ void fetchInit() {
   // Pin to core 0 (PRO_CPU, alongside the WiFi/TLS stack) so heavy HTTPS/mbedTLS
   // CPU work never starves the render loop, which runs on core 1 (ARDUINO_RUNNING_CORE).
   xTaskCreatePinnedToCore(fetchWorkerTask, "adsb_fetch", 16384, nullptr, 1, &s_fetch_task,
-                          0);
+                          config::kCoreNetwork);
+}
+
+bool queueBackgroundJob(BackgroundJob job) {
+  if (job == nullptr) {
+    return false;
+  }
+  if (s_fetch_task == nullptr) {
+    fetchInit();
+  }
+  if (s_bg_job != nullptr || s_bg_job_busy) {
+    return false;
+  }
+  s_bg_job = job;
+  return true;
+}
+
+bool backgroundJobActive() { return s_bg_job != nullptr || s_bg_job_busy; }
+
+void cancelPendingFetch() {
+  if (!s_fetch_busy) {
+    s_fetch_requested = false;
+  }
 }
 
 bool fetchRequest(double center_lat, double center_lon, float fetch_radius_km) {

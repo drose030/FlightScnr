@@ -43,6 +43,21 @@ bool copyAircraftByCallsign(const char* callsign, Aircraft* dst);
 /** Start background fetch worker (call once after WiFi is available). */
 void fetchInit();
 
+/** One-shot job run on the single TLS-owning fetch worker.
+ *  Lets low-priority HTTPS users (e.g. weather) borrow this task instead of
+ *  spawning a second TLS task — a second 12 KB stack fragments the tight
+ *  internal heap and starves the mbedTLS handshake (esp-sha / -32512). The job
+ *  runs only when no ADS-B fetch is pending (ADS-B has priority) and must
+ *  acquire the HTTPS lock itself. */
+using BackgroundJob = void (*)();
+bool queueBackgroundJob(BackgroundJob job);
+/** True while a queued background job is waiting or running. */
+bool backgroundJobActive();
+
+/** Drop a queued (not yet running) ADS-B fetch so the worker can run a
+ *  background job (e.g. weather) immediately. In-flight TLS is not aborted. */
+void cancelPendingFetch();
+
 /** Queue a non-blocking fetch; returns false if a fetch is already running. */
 bool fetchRequest(double center_lat, double center_lon, float fetch_radius_km);
 

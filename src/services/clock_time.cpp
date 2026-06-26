@@ -167,6 +167,26 @@ void formatDateLine(char* out, size_t len) {
   strftime(out, len, "%a %b %d", &local);
 }
 
+void formatClockFromEpoch(int64_t utc_epoch_sec, char* out, size_t len) {
+  if (out == nullptr || len == 0) {
+    return;
+  }
+  out[0] = '\0';
+  if (utc_epoch_sec < static_cast<int64_t>(kMinValidEpoch)) {
+    strncpy(out, "--:--", len - 1);
+    out[len - 1] = '\0';
+    return;
+  }
+  const time_t local_epoch = static_cast<time_t>(utc_epoch_sec + s_tz_offset_sec);
+  struct tm local {};
+  gmtime_r(&local_epoch, &local);
+  if (s_use_24h) {
+    strftime(out, len, "%H:%M", &local);
+  } else {
+    strftime(out, len, "%I:%M %p", &local);
+  }
+}
+
 void formatAmPm(char* out, size_t len) {
   if (out == nullptr || len == 0) {
     return;

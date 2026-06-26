@@ -19,6 +19,7 @@ constexpr char kNs[] = "flightscnr";
 constexpr char kAirLabs[] = "al_key";
 constexpr char kFlightAware[] = "fa_key";
 constexpr char kFr24[] = "fr24_key";
+constexpr char kWeather[] = "wx_key";
 constexpr char kUseAirLabs[] = "al_use";
 constexpr char kUseFlightAware[] = "fa_use";
 constexpr char kUseFr24[] = "fr24_use";
@@ -54,6 +55,8 @@ ProviderState s_fr24;
 bool s_use_airlabs = false;
 bool s_use_flightaware = false;
 bool s_use_fr24 = false;
+
+char s_weather_key[kMaxSingleKeyLen + 1] = {0};
 
 uint32_t s_al_max_calls = config::kDefaultAirLabsMaxCalls;
 uint32_t s_fa_budget_micro = config::kDefaultFlightAwareBudgetUsdMicro;
@@ -442,6 +445,12 @@ void load() {
   s_use_flightaware = prefs.getBool(kUseFlightAware, false);
   s_use_fr24 = prefs.getBool(kUseFr24, false);
 
+  if (prefs.isKey(kWeather)) {
+    copyBlob(s_weather_key, prefs.getString(kWeather).c_str(), sizeof(s_weather_key));
+  } else {
+    s_weather_key[0] = '\0';
+  }
+
   s_al_max_calls = prefs.getUInt(kAlMaxCalls, config::kDefaultAirLabsMaxCalls);
   s_fa_budget_micro = prefs.getUInt(kFaBudgetMicro, config::kDefaultFlightAwareBudgetUsdMicro);
   s_fa_cost_micro = prefs.getUInt(kFaCostMicro, config::kDefaultFlightAwareCostUsdMicro);
@@ -685,6 +694,20 @@ uint32_t fr24SpentUsdMicro() {
   maybeResetMonthlyUsage();
   return sumUsage(s_fr24.used, s_fr24.key_count);
 }
+
+bool hasWeather() { return s_weather_key[0] != '\0'; }
+
+const char* weatherKey() { return s_weather_key; }
+
+bool saveWeatherKeyFromForm(const char* weather) {
+  if (!saveIfNonEmpty(weather, kWeather)) {
+    return false;
+  }
+  copyBlob(s_weather_key, weather, sizeof(s_weather_key));
+  return true;
+}
+
+void maskedWeather(char* out, size_t len) { maskedPreviewSingle(s_weather_key, out, len); }
 
 void maskedAirLabs(char* out, size_t len) { maskedPreviewProvider(s_airlabs, out, len); }
 void maskedFlightAware(char* out, size_t len) { maskedPreviewProvider(s_flightaware, out, len); }
