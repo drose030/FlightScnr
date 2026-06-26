@@ -22,4 +22,10 @@ void infoScreenCycleDisplayFocus();
 /** Default display-page selection when opening page 2. */
 void infoScreenResetDisplayFocus();
 
+/** Short knob press on colors page (3/3) cycles highlighted setting row. */
+void infoScreenCycleColorsFocus();
+
+/** Default colors-page selection when opening page 3. */
+void infoScreenResetColorsFocus();
+
 }  // namespace ui

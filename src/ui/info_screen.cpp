@@ -43,11 +43,19 @@ enum class DisplayAdjustRow : uint8_t {
   Sweep,
   DetailTimeout,
   ClockTimeout,
+};
+
+DisplayAdjustRow s_display_focus = DisplayAdjustRow::Brightness;
+
+// Page 3/3 hosts the radar color plus the audio (beep) options, keeping the
+// busy Display page from overflowing the round panel.
+enum class ColorsAdjustRow : uint8_t {
+  Color,
   BeepOn,
   BeepTone,
 };
 
-DisplayAdjustRow s_display_focus = DisplayAdjustRow::Brightness;
+ColorsAdjustRow s_colors_focus = ColorsAdjustRow::Color;
 
 int circleHalfWidthAtRow(int row_y, int row_h) {
   if (kCircleRadius <= 0 || row_h <= 0) {
@@ -176,9 +184,7 @@ void buildMainStrings(char* ip_line, size_t ip_len, char* wifi_line, size_t wifi
 void buildDisplayStrings(char* bright_line, size_t bright_len, char* units_line,
                          size_t units_len, char* compass_line, size_t compass_len,
                          char* sweep_line, size_t sweep_len, char* detail_line,
-                         size_t detail_len, char* clock_line, size_t clock_len,
-                         char* beep_line, size_t beep_len, char* beep_tone_line,
-                         size_t beep_tone_len) {
+                         size_t detail_len, char* clock_line, size_t clock_len) {
   snprintf(bright_line, bright_len, "Brightness: %u%%",
            static_cast<unsigned>(hardware::displayBrightnessPercent()));
   snprintf(units_line, units_len, "Units: %s", ui::radar::distanceUnitLabel());
@@ -190,10 +196,6 @@ void buildDisplayStrings(char* bright_line, size_t bright_len, char* units_line,
            ui::displayPrefsFlightDetailTimeoutLabel());
   snprintf(clock_line, clock_len, "Clock/Forecast: %s",
            ui::displayPrefsClockWeatherTimeoutLabel());
-  snprintf(beep_line, beep_len, "UI Beep: %s",
-           hardware::buzzerEnabled() ? "on" : "off");
-  snprintf(beep_tone_line, beep_tone_len, "Beep Tone: %c",
-           hardware::buzzerToneLetter());
 }
 
 void drawMainPage(uint16_t bg, uint16_t fg, uint16_t label_fg, uint16_t hint_fg) {
@@ -296,12 +298,9 @@ void drawDisplayPage(uint16_t bg, uint16_t fg, uint16_t label_fg, uint16_t hint_
   char sweep_line[24];
   char detail_line[28];
   char clock_line[28];
-  char beep_line[24];
-  char beep_tone_line[28];
   buildDisplayStrings(bright_line, sizeof(bright_line), units_line, sizeof(units_line),
                       compass_line, sizeof(compass_line), sweep_line, sizeof(sweep_line),
-                      detail_line, sizeof(detail_line), clock_line, sizeof(clock_line),
-                      beep_line, sizeof(beep_line), beep_tone_line, sizeof(beep_tone_line));
+                      detail_line, sizeof(detail_line), clock_line, sizeof(clock_line));
 
   const uint16_t active_fg = settingsActiveFg();
   const uint16_t bright_fg =
@@ -316,10 +315,6 @@ void drawDisplayPage(uint16_t bg, uint16_t fg, uint16_t label_fg, uint16_t hint_
       (s_display_focus == DisplayAdjustRow::DetailTimeout) ? active_fg : label_fg;
   const uint16_t clock_fg =
       (s_display_focus == DisplayAdjustRow::ClockTimeout) ? active_fg : label_fg;
-  const uint16_t beep_fg =
-      (s_display_focus == DisplayAdjustRow::BeepOn) ? active_fg : label_fg;
-  const uint16_t beep_tone_fg =
-      (s_display_focus == DisplayAdjustRow::BeepTone) ? active_fg : label_fg;
 
   const int title_h = displayFontHeight(tft, displayFontTitle());
   const InfoLine option_lines[] = {
@@ -329,8 +324,6 @@ void drawDisplayPage(uint16_t bg, uint16_t fg, uint16_t label_fg, uint16_t hint_
       {sweep_line, displayFontBody(), sweep_fg},
       {detail_line, displayFontBody(), detail_fg},
       {clock_line, displayFontBody(), clock_fg},
-      {beep_line, displayFontBody(), beep_fg},
-      {beep_tone_line, displayFontBody(), beep_tone_fg},
   };
   const InfoLine hint_lines[] = {
       {"Knob press: change item", displayFontDetail(), hint_fg},
@@ -366,17 +359,32 @@ void drawDisplayPage(uint16_t bg, uint16_t fg, uint16_t label_fg, uint16_t hint_
 
 void drawColorsPage(uint16_t bg, uint16_t fg, uint16_t label_fg, uint16_t hint_fg) {
   char color_line[28];
+  char beep_line[24];
+  char beep_tone_line[28];
   snprintf(color_line, sizeof(color_line), "Radar color: %s",
            ui::radar::accentColorName());
+  snprintf(beep_line, sizeof(beep_line), "UI Beep: %s",
+           hardware::buzzerEnabled() ? "on" : "off");
+  snprintf(beep_tone_line, sizeof(beep_tone_line), "Beep Tone: %c",
+           hardware::buzzerToneLetter());
 
   const uint16_t active_fg = settingsActiveFg();
+  const uint16_t color_fg =
+      (s_colors_focus == ColorsAdjustRow::Color) ? active_fg : label_fg;
+  const uint16_t beep_fg =
+      (s_colors_focus == ColorsAdjustRow::BeepOn) ? active_fg : label_fg;
+  const uint16_t beep_tone_fg =
+      (s_colors_focus == ColorsAdjustRow::BeepTone) ? active_fg : label_fg;
 
   const int title_h = displayFontHeight(tft, displayFontTitle());
   const InfoLine option_lines[] = {
-      {color_line, displayFontBody(), active_fg},
+      {color_line, displayFontBody(), color_fg},
+      {beep_line, displayFontBody(), beep_fg},
+      {beep_tone_line, displayFontBody(), beep_tone_fg},
   };
   const InfoLine hint_lines[] = {
-      {"Turn knob: change color", displayFontDetail(), hint_fg},
+      {"Knob press: change item", displayFontDetail(), hint_fg},
+      {"Turn knob: change value", displayFontDetail(), hint_fg},
       {"Swipe right — Display", displayFontDetail(), hint_fg},
   };
   const int options_h = measureBlockHeight(option_lines, sizeof(option_lines) / sizeof(option_lines[0]));
@@ -432,14 +440,24 @@ void infoScreenCycleDisplayFocus() {
     case DisplayAdjustRow::DetailTimeout:
       s_display_focus = DisplayAdjustRow::ClockTimeout;
       break;
-    case DisplayAdjustRow::ClockTimeout:
-      s_display_focus = DisplayAdjustRow::BeepOn;
-      break;
-    case DisplayAdjustRow::BeepOn:
-      s_display_focus = DisplayAdjustRow::BeepTone;
-      break;
     default:
       s_display_focus = DisplayAdjustRow::Brightness;
+      break;
+  }
+}
+
+void infoScreenResetColorsFocus() { s_colors_focus = ColorsAdjustRow::Color; }
+
+void infoScreenCycleColorsFocus() {
+  switch (s_colors_focus) {
+    case ColorsAdjustRow::Color:
+      s_colors_focus = ColorsAdjustRow::BeepOn;
+      break;
+    case ColorsAdjustRow::BeepOn:
+      s_colors_focus = ColorsAdjustRow::BeepTone;
+      break;
+    default:
+      s_colors_focus = ColorsAdjustRow::Color;
       break;
   }
 }
@@ -475,7 +493,17 @@ void infoScreenHandleKnob(int8_t delta) {
   }
 
   if (s_page == ui::InfoSettingsPage::Colors) {
-    ui::radar::accentStep(delta);
+    switch (s_colors_focus) {
+      case ColorsAdjustRow::Color:
+        ui::radar::accentStep(delta);
+        break;
+      case ColorsAdjustRow::BeepOn:
+        hardware::buzzerSetEnabled(!hardware::buzzerEnabled());
+        break;
+      case ColorsAdjustRow::BeepTone:
+        hardware::buzzerToneStep(delta);
+        break;
+    }
     infoScreenDraw();
     return;
   }
@@ -502,12 +530,6 @@ void infoScreenHandleKnob(int8_t delta) {
       break;
     case DisplayAdjustRow::ClockTimeout:
       ui::displayPrefsClockWeatherTimeoutStep(delta);
-      break;
-    case DisplayAdjustRow::BeepOn:
-      hardware::buzzerSetEnabled(!hardware::buzzerEnabled());
-      break;
-    case DisplayAdjustRow::BeepTone:
-      hardware::buzzerToneStep(delta);
       break;
   }
   infoScreenDraw();

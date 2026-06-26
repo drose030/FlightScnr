@@ -16,6 +16,7 @@
 #include "config.h"
 #include "services/adsb_client.h"
 #include "services/api_keys.h"
+#include "services/clock_time.h"
 #include "services/https_heap.h"
 #include "services/https_lock.h"
 #include "services/map_center.h"
@@ -42,6 +43,20 @@ volatile bool s_ready = false;
 unsigned long s_last_ok_ms = 0;
 unsigned long s_last_attempt_ms = 0;
 volatile unsigned long s_retry_after_ms = 0;
+// Local calendar day (days since epoch in local time) of the last successful
+// fetch, so the forecast is refreshed at midnight even within the staleness
+// window. -1 = unknown / time not yet synced.
+int32_t s_last_ok_local_day = -1;
+
+// Days since the Unix epoch in local time, or -1 when the clock is unsynced.
+int32_t currentLocalDayIndex() {
+  const time_t now = time(nullptr);
+  if (now < kMinValidEpoch) {
+    return -1;
+  }
+  const time_t local = now + services::clock::timezoneOffsetSec();
+  return static_cast<int32_t>(local / 86400);
+}
 
 double s_req_lat = 0.0;
 double s_req_lon = 0.0;
@@ -270,7 +285,7 @@ bool fetchTimelines(HTTPClient& http, WiFiClientSecure& client, double lat, doub
   body +=
       "\",\"timesteps\":[\"1h\",\"1d\"],\"fields\":[\"temperature\",\"humidity\","
       "\"weatherCode\",\"temperatureMin\",\"temperatureMax\",\"weatherCodeMax\","
-      "\"sunriseTime\",\"sunsetTime\"]}";
+      "\"precipitationProbability\",\"sunriseTime\",\"sunsetTime\"]}";
 
   JsonDocument filter;
   JsonObject tl = filter["data"]["timelines"][0].to<JsonObject>();
@@ -284,6 +299,7 @@ bool fetchTimelines(HTTPClient& http, WiFiClientSecure& client, double lat, doub
   av["temperatureMin"] = true;
   av["temperatureMax"] = true;
   av["weatherCodeMax"] = true;
+  av["precipitationProbability"] = true;
   av["sunriseTime"] = true;
   av["sunsetTime"] = true;
 
@@ -316,23 +332,42 @@ bool fetchTimelines(HTTPClient& http, WiFiClientSecure& client, double lat, doub
         got_current = true;
       }
     } else if (strcmp(step, "1d") == 0) {
-      for (int i = 0; i < kForecastDays && i < static_cast<int>(intervals.size()); ++i) {
+      // Tomorrow.io daily buckets are anchored to ~6 AM local, so just after
+      // midnight the first bucket still represents *yesterday*'s civil date.
+      // Skip any leading bucket whose local date is before today so day 0 is
+      // always today's date and we show today + the next 2 days.
+      const int32_t tz = services::clock::timezoneOffsetSec();
+      const int32_t today = currentLocalDayIndex();
+      int out_idx = 0;
+      for (int i = 0; i < static_cast<int>(intervals.size()) && out_idx < kForecastDays;
+           ++i) {
         JsonObject d = intervals[i].as<JsonObject>();
         JsonObject v = d["values"].as<JsonObject>();
         if (v.isNull()) {
           continue;
         }
-        DayForecast& fc = out->days[i];
-        fc.date_epoch = iso8601ToEpoch(d["startTime"].as<const char*>());
+        const int64_t epoch = iso8601ToEpoch(d["startTime"].as<const char*>());
+        if (today >= 0 && epoch > 0) {
+          const int32_t bucket_day = static_cast<int32_t>((epoch + tz) / 86400);
+          if (bucket_day < today) {
+            continue;  // stale pre-midnight bucket
+          }
+        }
+        DayForecast& fc = out->days[out_idx];
+        fc.date_epoch = epoch;
         fc.temp_min = v["temperatureMin"].as<float>();
         fc.temp_max = v["temperatureMax"].as<float>();
         fc.weather_code = v["weatherCodeMax"].is<int>() ? v["weatherCodeMax"].as<int>()
                                                         : v["weatherCode"].as<int>();
+        fc.precip_probability = v["precipitationProbability"].is<int>()
+                                    ? v["precipitationProbability"].as<int>()
+                                    : -1;
         fc.valid = true;
-        if (i == 0) {
+        if (out_idx == 0) {
           out->sunrise_epoch = iso8601ToEpoch(v["sunriseTime"].as<const char*>());
           out->sunset_epoch = iso8601ToEpoch(v["sunsetTime"].as<const char*>());
         }
+        ++out_idx;
         got_daily = true;
       }
     }
@@ -409,6 +444,7 @@ void weatherJob() {
     fresh.fetched_ms = millis();
     s_staging = fresh;
     s_last_ok_ms = fresh.fetched_ms;
+    s_last_ok_local_day = currentLocalDayIndex();
     s_retry_after_ms = 0;
     s_ready = true;
   } else {
@@ -459,6 +495,7 @@ void bootSanityCheck() {
   fresh.fetched_ms = millis();
   s_staging = fresh;
   s_last_ok_ms = fresh.fetched_ms;
+  s_last_ok_local_day = currentLocalDayIndex();
   s_retry_after_ms = 0;
   s_ready = true;
 
@@ -533,7 +570,12 @@ void requestRefresh(bool force) {
     return;
   }
   // force only bypasses the staleness window (used for first load on screen open).
-  if (!force && s_live.valid && s_live.imperial == s_imperial &&
+  // A local-day rollover (midnight) always counts as stale so the forecast's
+  // "Today" column advances, even if the 30-minute window hasn't elapsed.
+  const int32_t today = currentLocalDayIndex();
+  const bool day_rolled = today >= 0 && s_last_ok_local_day >= 0 &&
+                          today != s_last_ok_local_day;
+  if (!force && !day_rolled && s_live.valid && s_live.imperial == s_imperial &&
       s_last_ok_ms != 0 && (now - s_last_ok_ms) < config::kWeatherStaleMs) {
     return;
   }

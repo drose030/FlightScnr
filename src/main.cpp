@@ -605,6 +605,7 @@ void handleNavigation() {
   } else if (swipe == SwipeLeft && g_screen == AppScreen::Settings &&
              ui::infoScreenPage() == ui::InfoSettingsPage::Display) {
     ui::infoScreenSetPage(ui::InfoSettingsPage::Colors);
+    ui::infoScreenResetColorsFocus();
     showSettings();
     Serial.println("Screen: settings (3/3)");
   } else if (swipe == SwipeRight && g_screen == AppScreen::FlightDetail) {
@@ -778,6 +779,12 @@ void handleInput() {
       if (inputConsumeKnobPress()) {
         noteSecondaryActivity();
         hardware::buzzerClick();
+      }
+      if (inputConsumeKnobTap()) {
+        noteSecondaryActivity();
+        ui::infoScreenCycleColorsFocus();
+        showSettings();
+        return;
       }
     }
     const int8_t enc = inputConsumeEncoderDelta();

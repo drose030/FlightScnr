@@ -13,6 +13,7 @@ struct DayForecast {
   int weather_code = 0;    // Tomorrow.io daily code (4-digit)
   float temp_min = 0.0f;   // in the active unit system
   float temp_max = 0.0f;
+  int precip_probability = -1;  // percent; -1 = unavailable
 };
 
 struct WeatherData {

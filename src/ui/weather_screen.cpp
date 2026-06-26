@@ -40,18 +40,33 @@ void drawTempCentered(int cx, int top_y, int value, char unit, UiTextStyle style
 }
 
 void weekdayLabel(int64_t date_epoch, int index, char* out, size_t len) {
-  if (index == 0) {
-    strncpy(out, "Today", len - 1);
-    out[len - 1] = '\0';
-    return;
-  }
   if (date_epoch <= 0) {
     snprintf(out, len, "Day %d", index + 1);
     return;
   }
-  const time_t local = static_cast<time_t>(date_epoch + services::clock::timezoneOffsetSec());
+  const int32_t tz = services::clock::timezoneOffsetSec();
+  const time_t local = static_cast<time_t>(date_epoch + tz);
   struct tm t {};
   gmtime_r(&local, &t);
+
+  // Label the column "Today" only when its date matches the current local date,
+  // so the labels stay correct after a midnight rollover even if the cache is
+  // briefly stale.
+  const time_t now = time(nullptr);
+  if (now >= 1600000000) {
+    const time_t now_local = now + tz;
+    struct tm nt {};
+    gmtime_r(&now_local, &nt);
+    if (t.tm_year == nt.tm_year && t.tm_yday == nt.tm_yday) {
+      strncpy(out, "Today", len - 1);
+      out[len - 1] = '\0';
+      return;
+    }
+  } else if (index == 0) {
+    strncpy(out, "Today", len - 1);
+    out[len - 1] = '\0';
+    return;
+  }
   strftime(out, len, "%a", &t);
 }
 
@@ -60,10 +75,13 @@ void drawForecast(const services::weather::WeatherData& wx, uint16_t fg, uint16_
   const char unit = wx.imperial ? 'F' : 'C';
   const int col_centers[services::weather::kForecastDays] = {kCenterX - 110, kCenterX,
                                                              kCenterX + 110};
-  constexpr int kLabelY = 86;
-  constexpr int kIconY = 108;
-  constexpr int kHiY = 212;
-  constexpr int kLoY = 240;
+  // Smaller icons leave room for the larger hi/lo temperature fonts.
+  constexpr int kForecastIconSize = 72;
+  constexpr int kLabelY = 104;
+  constexpr int kIconY = 128;
+  constexpr int kHiY = 214;
+  constexpr int kLoY = 256;
+  constexpr int kRainY = 292;
 
   for (int i = 0; i < services::weather::kForecastDays; ++i) {
     const services::weather::DayForecast& d = wx.days[i];
@@ -73,12 +91,20 @@ void drawForecast(const services::weather::WeatherData& wx, uint16_t fg, uint16_
     const int cx = col_centers[i];
     char label[12];
     weekdayLabel(d.date_epoch, i, label, sizeof(label));
-    drawCenteredAt(label, cx, kLabelY, displayFontDetail(), i == 0 ? accent : fg, bg);
-    services::weather_icon::drawIcon(tft, services::weather::dayIconCode(i), cx, kIconY, bg);
+    const bool is_today = strcmp(label, "Today") == 0;
+    drawCenteredAt(label, cx, kLabelY, displayFontDetail(), is_today ? accent : fg, bg);
+    services::weather_icon::drawIconScaled(tft, services::weather::dayIconCode(i), cx, kIconY,
+                                           bg, kForecastIconSize);
     drawTempCentered(cx, kHiY, static_cast<int>(lroundf(d.temp_max)), unit,
-                     displayFontBody(), fg, bg);
+                     displayFontTitle(), fg, bg);
     drawTempCentered(cx, kLoY, static_cast<int>(lroundf(d.temp_min)), unit,
-                     displayFontDetail(), dim, bg);
+                     displayFontBody(), dim, bg);
+    if (d.precip_probability >= 0) {
+      const int pct = d.precip_probability > 100 ? 100 : d.precip_probability;
+      char rain[16];
+      snprintf(rain, sizeof(rain), "Rain %d%%", pct);
+      drawCenteredAt(rain, cx, kRainY, displayFontDetail(), dim, bg);
+    }
   }
 }
 
@@ -89,7 +115,6 @@ void weatherScreenDraw() {
   const uint16_t bg = tft.color565(radar::kBgR, radar::kBgG, radar::kBgB);
   const uint16_t fg = tft.color565(255, 255, 255);
   const uint16_t dim = tft.color565(150, 165, 180);
-  const uint16_t hint = tft.color565(120, 140, 160);
   const uint16_t accent = tft.color565(radar::kSweepR, radar::kSweepG, radar::kSweepB);
 
   tft.fillScreen(bg);
@@ -105,8 +130,6 @@ void weatherScreenDraw() {
   } else {
     drawForecast(services::weather::data(), fg, dim, accent, bg);
   }
-
-  drawCentered("Swipe left — Clock", 344, displayFontDetail(), hint, bg);
 
   tft.setTextDatum(TextDatum::TopLeft);
   tft.endOffscreen();

@@ -15,15 +15,20 @@ constexpr int kDegGap2 = 4;
 
 int ringRadius(int temp_h) {
   if (temp_h >= 44) {
-    return 6;
+    return 8;
   }
   if (temp_h >= 28) {
-    return 4;
+    return 6;
   }
-  return 3;
+  return 4;
 }
 
-int ringThickness(int r) { return r >= 5 ? 2 : 1; }
+int ringThickness(int r) {
+  if (r >= 7) {
+    return 3;
+  }
+  return r >= 5 ? 2 : 1;
+}
 
 void drawRing(int cx, int cy, int r, uint16_t fg, uint16_t bg) {
   const int thick = ringThickness(r);
@@ -33,7 +38,7 @@ void drawRing(int cx, int cy, int r, uint16_t fg, uint16_t bg) {
   }
 }
 
-int superscriptCy(int top_y, int r) { return top_y + r + 2; }
+int superscriptCy(int top_y, int r) { return top_y + r - 1; }
 
 }  // namespace
 

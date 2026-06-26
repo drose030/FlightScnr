@@ -22,11 +22,9 @@ constexpr int kLineGap = 4;
 constexpr int kSectionGap = 8;
 /** Extra space between the time row and the date line. */
 constexpr int kTimeDateGap = 14;
-/** Extra space between UTC label and swipe hints. */
-constexpr int kHintsTopGap = 22;
 /** On-screen size of the current-weather icon (downscaled from the native 96px
  *  forecast art) so the clock's time row stays inside the round display. */
-constexpr int kClockIconSize = 56;
+constexpr int kClockIconSize = 64;
 
 const int kCenterX = config::kDisplayWidth / 2;
 const int kCenterY = config::kDisplayHeight / 2;
@@ -132,16 +130,15 @@ void drawSunGroup(int cx, bool sunset, const char* time_str, int y, uint16_t fg,
   const int icon = services::weather_icon::sunIconSize();
   displayFontApply(tft, displayFontDetail());
   const int text_w = tft.textWidth(time_str);
-  const int text_h = displayFontHeight(tft, displayFontDetail());
   constexpr int kGap = 4;
   const int total = icon + kGap + text_w;
   const int left = cx - total / 2;
 
   services::weather_icon::drawSunIcon(tft, sunset, static_cast<int16_t>(left + icon / 2),
                                       static_cast<int16_t>(y), bg);
-  tft.setTextDatum(TextDatum::TopLeft);
+  tft.setTextDatum(TextDatum::MiddleLeft);
   tft.setTextColor(fg, bg);
-  tft.drawString(time_str, left + icon + kGap, y + (icon - text_h) / 2);
+  tft.drawString(time_str, left + icon + kGap, y + icon / 2);
 }
 
 int sunRowHeight() {
@@ -248,11 +245,9 @@ void clockScreenDraw() {
   const int time_h = displayFontHeight(tft, displayFontClockTime());
   const int date_h = displayFontHeight(tft, displayFontClockDate()) + kLineGap;
   const int tz_h = displayFontHeight(tft, displayFontDetail()) + kLineGap;
-  const int detail_h = displayFontHeight(tft, displayFontDetail());
-  const int hints_h = detail_h * 3 + kLineGap * 2 + kHintsTopGap;
   const bool show_weather = services::weather::hasData();
   const int weather_h = show_weather ? weatherBlockHeight() : 0;
-  const int block_h = time_h + kTimeDateGap + date_h + tz_h + weather_h + hints_h;
+  const int block_h = time_h + kTimeDateGap + date_h + tz_h + weather_h;
 
   tft.fillScreen(bg);
 
@@ -276,12 +271,6 @@ void clockScreenDraw() {
       drawSunRow(&y, hint_fg, bg);
     }
   }
-
-  y += kHintsTopGap;
-
-  drawCenterLine("Swipe up — Radar", &y, displayFontDetail(), hint_fg, bg);
-  drawCenterLine("Swipe right — Forecast", &y, displayFontDetail(), hint_fg, bg);
-  drawCenterLine("Swipe left — Clock settings", &y, displayFontDetail(), hint_fg, bg);
 
   tft.setTextDatum(TextDatum::TopLeft);
   tft.endOffscreen();
