@@ -22,4 +22,9 @@ bool displayPrefsSweepLineEnabled();
 void displayPrefsToggleSweepLine();
 void displayPrefsSaveSweepLineFromForm(const char* checkbox_value);
 
+/** When true, an empty radar (no in-range aircraft) auto-opens the clock screen. */
+bool displayPrefsAutoIdleClockEnabled();
+void displayPrefsToggleAutoIdleClock();
+void displayPrefsSaveAutoIdleClockFromForm(const char* checkbox_value);
+
 }  // namespace ui

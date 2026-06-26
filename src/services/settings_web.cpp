@@ -254,6 +254,16 @@ void handleSettingsPage() {
     used += static_cast<size_t>(clock_n);
   }
 
+  const int idle_n = snprintf(
+      page + used, kSettingsPageCap - used,
+      "<div class=\"chk\"><input id=\"idle_clock\" name=\"idle_clock\" type=\"checkbox\" "
+      "value=\"T\"%s><label for=\"idle_clock\">Return to clock when no aircraft "
+      "visible</label></div>",
+      ui::displayPrefsAutoIdleClockEnabled() ? " checked" : "");
+  if (idle_n > 0) {
+    used += static_cast<size_t>(idle_n);
+  }
+
   const uint8_t bright = hardware::displayBrightnessPercent();
   const int bright_n = snprintf(
       page + used, kSettingsPageCap - used,
@@ -532,6 +542,7 @@ void handleSave() {
   services::apikeys::saveWeatherKeyFromForm(s_server->arg("weather_key").c_str());
   services::weather::saveUnitsFromForm(s_server->arg("weather_units").c_str());
   ui::displayPrefsSaveClockWeatherTimeoutFromForm(s_server->arg("clock_timeout").c_str());
+  ui::displayPrefsSaveAutoIdleClockFromForm(s_server->arg("idle_clock").c_str());
   ui::radar::accentSaveFromForm(s_server->arg("radar_accent").c_str());
 
   Serial.printf("Settings web save (lat/lon %s)\n", loc_ok ? "ok" : "invalid");

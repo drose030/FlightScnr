@@ -11,6 +11,7 @@ constexpr char kStoreNs[] = "flightscnr";
 constexpr char kDetailTimeoutKey[] = "detail_to";
 constexpr char kClockTimeoutKey[] = "clock_to";
 constexpr char kSweepLineKey[] = "sweep_en";
+constexpr char kIdleClockKey[] = "idle_clk";
 
 constexpr uint8_t kDefaultDetailTimeoutSec = 10;
 constexpr uint8_t kDefaultClockTimeoutSec = 10;
@@ -20,6 +21,7 @@ uint8_t s_flight_detail_timeout_sec = kDefaultDetailTimeoutSec;
 /** 0 = manual; otherwise 5, 10, or 15. */
 uint8_t s_clock_weather_timeout_sec = kDefaultClockTimeoutSec;
 bool s_sweep_line_enabled = true;
+bool s_auto_idle_clock_enabled = true;
 
 constexpr uint8_t kTimeoutOptions[] = {0, 10, 20, 30};
 constexpr size_t kTimeoutOptionCount = sizeof(kTimeoutOptions) / sizeof(kTimeoutOptions[0]);
@@ -82,6 +84,14 @@ void persistSweepLine() {
   }
 }
 
+void persistAutoIdleClock() {
+  Preferences prefs;
+  if (prefs.begin(kStoreNs, false)) {
+    prefs.putBool(kIdleClockKey, s_auto_idle_clock_enabled);
+    prefs.end();
+  }
+}
+
 int timeoutOptionIndex(uint8_t sec) {
   for (size_t i = 0; i < kTimeoutOptionCount; ++i) {
     if (kTimeoutOptions[i] == sec) {
@@ -114,6 +124,7 @@ void displayPrefsBootLoad() {
   s_clock_weather_timeout_sec =
       isValidClockTimeoutSec(clock_stored) ? clock_stored : kDefaultClockTimeoutSec;
   s_sweep_line_enabled = prefs.getBool(kSweepLineKey, true);
+  s_auto_idle_clock_enabled = prefs.getBool(kIdleClockKey, true);
   prefs.end();
 }
 
@@ -243,6 +254,20 @@ void displayPrefsSaveSweepLineFromForm(const char* checkbox_value) {
   s_sweep_line_enabled = formCheckboxOn(checkbox_value);
   persistSweepLine();
   Serial.printf("Radar sweep: %s\n", s_sweep_line_enabled ? "on" : "off");
+}
+
+bool displayPrefsAutoIdleClockEnabled() { return s_auto_idle_clock_enabled; }
+
+void displayPrefsToggleAutoIdleClock() {
+  s_auto_idle_clock_enabled = !s_auto_idle_clock_enabled;
+  persistAutoIdleClock();
+  Serial.printf("Idle clock: %s\n", s_auto_idle_clock_enabled ? "on" : "off");
+}
+
+void displayPrefsSaveAutoIdleClockFromForm(const char* checkbox_value) {
+  s_auto_idle_clock_enabled = formCheckboxOn(checkbox_value);
+  persistAutoIdleClock();
+  Serial.printf("Idle clock: %s\n", s_auto_idle_clock_enabled ? "on" : "off");
 }
 
 }  // namespace ui

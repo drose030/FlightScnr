@@ -43,6 +43,7 @@ enum class DisplayAdjustRow : uint8_t {
   Sweep,
   DetailTimeout,
   ClockTimeout,
+  IdleClock,
 };
 
 DisplayAdjustRow s_display_focus = DisplayAdjustRow::Brightness;
@@ -184,7 +185,8 @@ void buildMainStrings(char* ip_line, size_t ip_len, char* wifi_line, size_t wifi
 void buildDisplayStrings(char* bright_line, size_t bright_len, char* units_line,
                          size_t units_len, char* compass_line, size_t compass_len,
                          char* sweep_line, size_t sweep_len, char* detail_line,
-                         size_t detail_len, char* clock_line, size_t clock_len) {
+                         size_t detail_len, char* clock_line, size_t clock_len,
+                         char* idle_line, size_t idle_len) {
   snprintf(bright_line, bright_len, "Brightness: %u%%",
            static_cast<unsigned>(hardware::displayBrightnessPercent()));
   snprintf(units_line, units_len, "Units: %s", ui::radar::distanceUnitLabel());
@@ -196,6 +198,8 @@ void buildDisplayStrings(char* bright_line, size_t bright_len, char* units_line,
            ui::displayPrefsFlightDetailTimeoutLabel());
   snprintf(clock_line, clock_len, "Clock/Forecast: %s",
            ui::displayPrefsClockWeatherTimeoutLabel());
+  snprintf(idle_line, idle_len, "Idle Clock: %s",
+           ui::displayPrefsAutoIdleClockEnabled() ? "on" : "off");
 }
 
 void drawMainPage(uint16_t bg, uint16_t fg, uint16_t label_fg, uint16_t hint_fg) {
@@ -298,9 +302,11 @@ void drawDisplayPage(uint16_t bg, uint16_t fg, uint16_t label_fg, uint16_t hint_
   char sweep_line[24];
   char detail_line[28];
   char clock_line[28];
+  char idle_line[24];
   buildDisplayStrings(bright_line, sizeof(bright_line), units_line, sizeof(units_line),
                       compass_line, sizeof(compass_line), sweep_line, sizeof(sweep_line),
-                      detail_line, sizeof(detail_line), clock_line, sizeof(clock_line));
+                      detail_line, sizeof(detail_line), clock_line, sizeof(clock_line),
+                      idle_line, sizeof(idle_line));
 
   const uint16_t active_fg = settingsActiveFg();
   const uint16_t bright_fg =
@@ -315,6 +321,8 @@ void drawDisplayPage(uint16_t bg, uint16_t fg, uint16_t label_fg, uint16_t hint_
       (s_display_focus == DisplayAdjustRow::DetailTimeout) ? active_fg : label_fg;
   const uint16_t clock_fg =
       (s_display_focus == DisplayAdjustRow::ClockTimeout) ? active_fg : label_fg;
+  const uint16_t idle_fg =
+      (s_display_focus == DisplayAdjustRow::IdleClock) ? active_fg : label_fg;
 
   const int title_h = displayFontHeight(tft, displayFontTitle());
   const InfoLine option_lines[] = {
@@ -324,6 +332,7 @@ void drawDisplayPage(uint16_t bg, uint16_t fg, uint16_t label_fg, uint16_t hint_
       {sweep_line, displayFontBody(), sweep_fg},
       {detail_line, displayFontBody(), detail_fg},
       {clock_line, displayFontBody(), clock_fg},
+      {idle_line, displayFontBody(), idle_fg},
   };
   const InfoLine hint_lines[] = {
       {"Knob press: change item", displayFontDetail(), hint_fg},
@@ -440,6 +449,9 @@ void infoScreenCycleDisplayFocus() {
     case DisplayAdjustRow::DetailTimeout:
       s_display_focus = DisplayAdjustRow::ClockTimeout;
       break;
+    case DisplayAdjustRow::ClockTimeout:
+      s_display_focus = DisplayAdjustRow::IdleClock;
+      break;
     default:
       s_display_focus = DisplayAdjustRow::Brightness;
       break;
@@ -530,6 +542,9 @@ void infoScreenHandleKnob(int8_t delta) {
       break;
     case DisplayAdjustRow::ClockTimeout:
       ui::displayPrefsClockWeatherTimeoutStep(delta);
+      break;
+    case DisplayAdjustRow::IdleClock:
+      ui::displayPrefsToggleAutoIdleClock();
       break;
   }
   infoScreenDraw();

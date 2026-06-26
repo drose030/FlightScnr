@@ -65,6 +65,7 @@ unsigned long g_secondary_activity_ms = 0;
 unsigned long g_clock_weather_activity_ms = 0;
 bool g_auto_idle_clock = false;
 bool g_hold_empty_radar = false;
+unsigned long g_ignore_swipes_until_ms = 0;
 unsigned long g_boot_details_until_ms = 0;
 uint32_t g_last_clock_minute_stamp = UINT32_MAX;
 unsigned long g_last_heap_log_ms = 0;
@@ -561,72 +562,107 @@ void onRangeStep(int8_t delta) {
   }
 }
 
+void noteSwipeNavigation() {
+  g_ignore_swipes_until_ms = millis() + config::kSwipeNavDebounceMs;
+  inputDiscardPendingInteractions();
+}
+
 void handleNavigation() {
   if (bootDetailsActive()) {
     inputConsumeSwipe();
     return;
   }
 
+  if (millis() < g_ignore_swipes_until_ms) {
+    inputConsumeSwipe();
+    return;
+  }
+
   const SwipeGesture swipe = inputConsumeSwipe();
-  if (swipe != SwipeNone && g_screen != AppScreen::Radar &&
-      g_screen != AppScreen::Clock && g_screen != AppScreen::Weather) {
+  if (swipe == SwipeNone) {
+    return;
+  }
+
+  if (g_screen != AppScreen::Radar && g_screen != AppScreen::Clock &&
+      g_screen != AppScreen::Weather) {
     noteSecondaryActivity();
   }
-  if (swipe != SwipeNone &&
-      (g_screen == AppScreen::Clock || g_screen == AppScreen::Weather)) {
+  if (g_screen == AppScreen::Clock || g_screen == AppScreen::Weather) {
     noteClockWeatherActivity();
   }
+
+  bool navigated = false;
   if (swipe == SwipeDown && g_screen == AppScreen::Radar) {
     openClockFromRadar();
+    navigated = true;
   } else if (swipe == SwipeUp && g_screen == AppScreen::Radar) {
     openDetailsFromRadar();
+    navigated = true;
   } else if (swipe == SwipeDown && g_screen == AppScreen::Details) {
-    returnToRadar(false);
+    returnToRadar(false, true);
+    navigated = true;
   } else if (swipe == SwipeUp && g_screen == AppScreen::Clock) {
     returnToRadar(false, true);
+    navigated = true;
   } else if (swipe == SwipeUp && g_screen == AppScreen::Weather) {
     returnToRadar(false, true);
+    navigated = true;
   } else if (swipe == SwipeRight && g_screen == AppScreen::Clock) {
     openWeatherFromClock();
+    navigated = true;
   } else if (swipe == SwipeLeft && g_screen == AppScreen::Weather) {
     g_screen = AppScreen::Clock;
     showClock();
     Serial.println("Screen: clock");
+    navigated = true;
   } else if (swipe == SwipeLeft && g_screen == AppScreen::Clock) {
     openClockSettingsFromClock();
+    navigated = true;
   } else if (swipe == SwipeRight && g_screen == AppScreen::ClockSettings) {
     g_screen = AppScreen::Clock;
     showClock();
     Serial.println("Screen: clock");
+    navigated = true;
   } else if (swipe == SwipeLeft && g_screen == AppScreen::Radar) {
     openSettingsFromRadar();
+    navigated = true;
   } else if (swipe == SwipeLeft && g_screen == AppScreen::Settings &&
              ui::infoScreenPage() == ui::InfoSettingsPage::Main) {
     ui::infoScreenSetPage(ui::InfoSettingsPage::Display);
     ui::infoScreenResetDisplayFocus();
     showSettings();
     Serial.println("Screen: settings (2/3)");
+    navigated = true;
   } else if (swipe == SwipeLeft && g_screen == AppScreen::Settings &&
              ui::infoScreenPage() == ui::InfoSettingsPage::Display) {
     ui::infoScreenSetPage(ui::InfoSettingsPage::Colors);
     ui::infoScreenResetColorsFocus();
     showSettings();
     Serial.println("Screen: settings (3/3)");
+    navigated = true;
   } else if (swipe == SwipeRight && g_screen == AppScreen::FlightDetail) {
-    returnToRadar(false);
+    returnToRadar(false, true);
+    navigated = true;
   } else if (swipe == SwipeRight && g_screen == AppScreen::Settings &&
              ui::infoScreenPage() == ui::InfoSettingsPage::Colors) {
     ui::infoScreenSetPage(ui::InfoSettingsPage::Display);
     ui::infoScreenResetDisplayFocus();
     showSettings();
     Serial.println("Screen: settings (2/3)");
+    navigated = true;
   } else if (swipe == SwipeRight && g_screen == AppScreen::Settings &&
              ui::infoScreenPage() == ui::InfoSettingsPage::Display) {
     ui::infoScreenSetPage(ui::InfoSettingsPage::Main);
     showSettings();
     Serial.println("Screen: settings (1/3)");
+    navigated = true;
   } else if (swipe == SwipeRight && g_screen == AppScreen::Settings) {
-    returnToRadar(false);
+    returnToRadar(false, true);
+    navigated = true;
+  }
+
+  if (navigated) {
+    noteSwipeNavigation();
   }
 }
 
@@ -701,7 +737,7 @@ void tickAutoIdleClock() {
   }
 
   if (!g_auto_idle_clock && !g_hold_empty_radar && g_screen == AppScreen::Radar &&
-      g_radar_visible && ac == 0) {
+      g_radar_visible && ac == 0 && ui::displayPrefsAutoIdleClockEnabled()) {
     openClockFromIdleRadar();
   }
 }

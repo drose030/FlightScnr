@@ -42,6 +42,9 @@ constexpr gpio_num_t kKnobKeyPin = GPIO_NUM_0;
 constexpr unsigned long kKnobResetHoldMs = 3000UL;
 /** Ignore knob taps shorter than this (debounce). */
 constexpr unsigned long kKnobTapMinMs = 40UL;
+/** Ignore swipe gestures briefly after a screen change (prevents one gesture
+ *  from triggering two transitions, e.g. clock→radar then radar→details). */
+constexpr unsigned long kSwipeNavDebounceMs = 300UL;
 
 // --- Rotary encoder ---
 constexpr gpio_num_t kKnobPinA = GPIO_NUM_1;
