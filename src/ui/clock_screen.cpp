@@ -24,6 +24,9 @@ constexpr int kSectionGap = 8;
 constexpr int kTimeDateGap = 14;
 /** Extra space between UTC label and swipe hints. */
 constexpr int kHintsTopGap = 22;
+/** On-screen size of the current-weather icon (downscaled from the native 96px
+ *  forecast art) so the clock's time row stays inside the round display. */
+constexpr int kClockIconSize = 56;
 
 const int kCenterX = config::kDisplayWidth / 2;
 const int kCenterY = config::kDisplayHeight / 2;
@@ -179,9 +182,10 @@ int currentWeatherRowHeight() {
   if (!services::weather::hasData()) {
     return 0;
   }
-  const int icon_h =
-      services::weather_icon::iconHeight(services::weather::currentIconCode());
-  const int temp_h = displayFontHeight(tft, displayFontClockTime());
+  const int icon_h = services::weather_icon::hasIcon(services::weather::currentIconCode())
+                         ? kClockIconSize
+                         : 0;
+  const int temp_h = displayFontHeight(tft, displayFontClockAmPm());
   return (icon_h > temp_h ? icon_h : temp_h);
 }
 
@@ -200,21 +204,22 @@ int weatherBlockHeight() {
 void drawCurrentWeatherRow(int* y, uint16_t temp_fg, uint16_t bg) {
   const services::weather::WeatherData& wx = services::weather::data();
   const int code = services::weather::currentIconCode();
-  const int icon_w = services::weather_icon::iconWidth(code);
-  const int icon_h = services::weather_icon::iconHeight(code);
+  const bool has_icon = services::weather_icon::hasIcon(code);
+  const int icon_w = has_icon ? kClockIconSize : 0;
+  const int icon_h = has_icon ? kClockIconSize : 0;
   const int temp = static_cast<int>(std::lround(wx.current_temp));
   const char unit = wx.imperial ? 'F' : 'C';
-  const UiTextStyle ts = displayFontClockTime();
+  const UiTextStyle ts = displayFontClockAmPm();
   const int temp_w = tempVisibleWidth(ts, temp, unit);
   const int temp_h = displayFontHeight(tft, ts);
   const int row_h = icon_h > temp_h ? icon_h : temp_h;
-  const int icon_gap = icon_w > 0 ? 14 : 0;
+  const int icon_gap = icon_w > 0 ? 10 : 0;
   const int row_w = icon_w + icon_gap + temp_w;
   const int start_x = kCenterX - row_w / 2;
 
   if (icon_w > 0) {
-    services::weather_icon::drawIcon(tft, code, start_x + icon_w / 2,
-                                     *y + (row_h - icon_h) / 2, bg);
+    services::weather_icon::drawIconScaled(tft, code, start_x + icon_w / 2,
+                                           *y + (row_h - icon_h) / 2, bg, kClockIconSize);
   }
   drawTempAt(start_x + icon_w + icon_gap, *y + (row_h - temp_h) / 2, temp, unit, ts, temp_fg,
              bg);

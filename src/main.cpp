@@ -681,7 +681,9 @@ void tickAutoIdleClock() {
     return;
   }
 
-  const size_t ac = services::adsb::aircraftCount();
+  // Only count aircraft inside the outer ring (drawn as airplanes). Off-screen
+  // beyond-ring blips should not pull us back to the radar.
+  const size_t ac = ui::radarDisplayInRangeAircraftCount();
 
   if (g_auto_idle_clock && ac > 0 &&
       (g_screen == AppScreen::Clock || g_screen == AppScreen::Weather)) {

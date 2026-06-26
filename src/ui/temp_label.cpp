@@ -8,8 +8,10 @@
 namespace ui::temp_label {
 namespace {
 
-constexpr int kDegGap1 = 3;
-constexpr int kDegGap2 = 2;
+// Generous gaps so the opaque text cells (drawString paints fg-on-bg) never
+// overlap — and thus never clip — the drawn degree ring between them.
+constexpr int kDegGap1 = 5;
+constexpr int kDegGap2 = 4;
 
 int ringRadius(int temp_h) {
   if (temp_h >= 44) {
@@ -57,9 +59,11 @@ int drawAt(int x, int top_y, int value, char unit, UiTextStyle style, uint16_t f
   const int numw = tft.textWidth(num);
   tft.setTextDatum(TextDatum::TopLeft);
   tft.setTextColor(fg, bg);
+  // Draw both text cells first, then the ring on top, so the opaque unit/number
+  // backgrounds can never paint over the ring's edge.
   tft.drawString(num, x, top_y);
-  drawRing(x + numw + kDegGap1 + r, superscriptCy(top_y, r), r, fg, bg);
   tft.drawString(us, x + numw + kDegGap1 + ringw + kDegGap2, top_y);
+  drawRing(x + numw + kDegGap1 + r, superscriptCy(top_y, r), r, fg, bg);
   return numw + kDegGap1 + ringw + kDegGap2 + tft.textWidth(us);
 }
 

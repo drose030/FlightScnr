@@ -156,6 +156,35 @@ bool drawIcon(PlaneGfx& tft, int code, int16_t center_x, int16_t y, uint16_t bg)
   return drawBlob(tft, findIconBlob(code), center_x, y, bg);
 }
 
+bool drawIconScaled(PlaneGfx& tft, int code, int16_t center_x, int16_t y, uint16_t bg,
+                    int target_size) {
+  const data::weather_icons::IconBlob* blob = findIconBlob(code);
+  if (blob == nullptr || !decodeGifToFrame(blob)) {
+    return false;
+  }
+  const int w = s_frame_w;
+  const int h = s_frame_h;
+  if (target_size <= 0 || target_size >= w) {
+    return drawBlob(tft, blob, center_x, y, bg);
+  }
+  const int tw = target_size;
+  const int th = (h * target_size) / w;
+  const uint16_t key = data::weather_icons::kTransparentRgb565;
+  const int16_t x = static_cast<int16_t>(center_x - tw / 2);
+  // Nearest-neighbor downscale, one row at a time to keep RAM tiny.
+  uint16_t row[data::weather_icons::kMaxIconW];
+  for (int ty = 0; ty < th; ++ty) {
+    const int sy = (ty * h) / th;
+    const uint16_t* src = s_frame + sy * w;
+    for (int tx = 0; tx < tw; ++tx) {
+      const uint16_t px = src[(tx * w) / tw];
+      row[tx] = (px == key) ? bg : px;
+    }
+    tft.draw16bitRGBBitmap(x, static_cast<int16_t>(y + ty), row, static_cast<int16_t>(tw), 1);
+  }
+  return true;
+}
+
 bool hasSunIcons() { return data::weather_icons::kHasSunIcons; }
 
 int sunIconSize() {

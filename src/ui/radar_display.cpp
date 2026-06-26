@@ -328,6 +328,22 @@ void sortBeyondDotsFarFirst(BeyondDotDrawItem* items, size_t count) {
   }
 }
 
+size_t inRangeAircraftCount() {
+  const size_t n = services::adsb::aircraftCount();
+  const services::adsb::Aircraft* planes = services::adsb::aircraftList();
+  size_t in_range = 0;
+  for (size_t i = 0; i < n; ++i) {
+    float dx_km = 0.0f;
+    float dy_km = 0.0f;
+    float dist_km = 0.0f;
+    localOffsetFromCenter(planes[i].lat, planes[i].lon, &dx_km, &dy_km, &dist_km);
+    if (isInsideOuterRingKm(dist_km)) {
+      ++in_range;
+    }
+  }
+  return in_range;
+}
+
 void drawAircraft() {
   initLabelMetrics();
 
@@ -1311,5 +1327,7 @@ void radarDisplayRefreshAircraft() {
     Serial.println("[sweep] aircraft_refresh deferred");
   }
 }
+
+size_t radarDisplayInRangeAircraftCount() { return inRangeAircraftCount(); }
 
 }  // namespace ui

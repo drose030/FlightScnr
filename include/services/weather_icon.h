@@ -13,6 +13,11 @@ bool hasIcon(int code);
  *  Transparent pixels are filled with bg. Returns false when no icon exists. */
 bool drawIcon(PlaneGfx& tft, int code, int16_t center_x, int16_t y, uint16_t bg);
 
+/** Like drawIcon but nearest-neighbor scaled to target_size (square). Used where
+ *  the native icon is too large for the layout (e.g. the clock screen). */
+bool drawIconScaled(PlaneGfx& tft, int code, int16_t center_x, int16_t y, uint16_t bg,
+                    int target_size);
+
 /** Width/height of the icon for layout, or 0 when none. */
 int iconWidth(int code);
 int iconHeight(int code);
