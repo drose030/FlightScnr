@@ -5,6 +5,7 @@
 #include "services/adsb_client.h"
 #include "services/api_keys.h"
 #include "services/map_center.h"
+#include "services/weather.h"
 #include "hardware/buzzer.h"
 #include "hardware/display_brightness.h"
 #include "ui/display_prefs.h"
@@ -49,6 +50,9 @@ bool settingsApplyFromForm(const char* radar_center_str, const char* lat_str,
     loc_ok = services::map_center::applyRadarCenterFromForm(radar_center_str);
   } else {
     loc_ok = services::map_center::applyPortalCoordinates(lat_str, lon_str);
+  }
+  if (loc_ok) {
+    services::weather::notifyLocationChanged();
   }
   ui::radar::saveDistanceUnitsFromForm(dist_unit_str, legacy_miles_checkbox);
   if (cardinals_checkbox != nullptr) {

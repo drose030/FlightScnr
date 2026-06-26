@@ -10,6 +10,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
+#include <cmath>
 #include <cstring>
 #include <ctime>
 
@@ -61,6 +62,28 @@ int32_t currentLocalDayIndex() {
 double s_req_lat = 0.0;
 double s_req_lon = 0.0;
 bool s_req_imperial = false;
+bool s_last_ok_location_valid = false;
+double s_last_ok_lat = 0.0;
+double s_last_ok_lon = 0.0;
+
+bool locationMatches(double a_lat, double a_lon, double b_lat, double b_lon) {
+  constexpr double kEps = 1e-5;
+  return std::fabs(a_lat - b_lat) < kEps && std::fabs(a_lon - b_lon) < kEps;
+}
+
+bool cachedLocationStale() {
+  if (!s_last_ok_location_valid || !s_live.valid) {
+    return false;
+  }
+  return !locationMatches(s_last_ok_lat, s_last_ok_lon, services::map_center::latitude(),
+                         services::map_center::longitude());
+}
+
+void noteSuccessfulFetchLocation() {
+  s_last_ok_lat = s_req_lat;
+  s_last_ok_lon = s_req_lon;
+  s_last_ok_location_valid = true;
+}
 
 void workerYield() { vTaskDelay(1); }
 
@@ -441,12 +464,18 @@ bool fetchWeatherBlocking(WeatherData* out) {
 void weatherJob() {
   WeatherData fresh{};
   if (fetchWeatherBlocking(&fresh)) {
-    fresh.fetched_ms = millis();
-    s_staging = fresh;
-    s_last_ok_ms = fresh.fetched_ms;
-    s_last_ok_local_day = currentLocalDayIndex();
-    s_retry_after_ms = 0;
-    s_ready = true;
+    if (!locationMatches(s_req_lat, s_req_lon, services::map_center::latitude(),
+                         services::map_center::longitude())) {
+      Serial.println("[weather] discard fetch — map center moved");
+    } else {
+      fresh.fetched_ms = millis();
+      s_staging = fresh;
+      s_last_ok_ms = fresh.fetched_ms;
+      s_last_ok_local_day = currentLocalDayIndex();
+      noteSuccessfulFetchLocation();
+      s_retry_after_ms = 0;
+      s_ready = true;
+    }
   } else {
     // Back off so a failure / heap-tight defer doesn't retry every loop. Don't
     // shorten a longer back-off already set (e.g. the 429 rate-limit window).
@@ -496,6 +525,7 @@ void bootSanityCheck() {
   s_staging = fresh;
   s_last_ok_ms = fresh.fetched_ms;
   s_last_ok_local_day = currentLocalDayIndex();
+  noteSuccessfulFetchLocation();
   s_retry_after_ms = 0;
   s_ready = true;
 
@@ -553,7 +583,18 @@ void requestOnScreenOpen() {
   // back-off here: rapid screen switching must not bypass the 429 rate-limit
   // window or the per-attempt throttle.
   services::adsb::cancelPendingFetch();
-  requestRefresh(!hasData());
+  requestRefresh(!hasData() || cachedLocationStale());
+}
+
+void notifyLocationChanged() {
+  if (!cachedLocationStale()) {
+    return;
+  }
+  s_live.valid = false;
+  s_ready = false;
+  Serial.println("[weather] map center changed — refresh requested");
+  services::adsb::cancelPendingFetch();
+  requestRefresh(true);
 }
 
 void requestRefresh(bool force) {
@@ -575,8 +616,10 @@ void requestRefresh(bool force) {
   const int32_t today = currentLocalDayIndex();
   const bool day_rolled = today >= 0 && s_last_ok_local_day >= 0 &&
                           today != s_last_ok_local_day;
-  if (!force && !day_rolled && s_live.valid && s_live.imperial == s_imperial &&
-      s_last_ok_ms != 0 && (now - s_last_ok_ms) < config::kWeatherStaleMs) {
+  const bool location_changed = cachedLocationStale();
+  if (!force && !day_rolled && !location_changed && s_live.valid &&
+      s_live.imperial == s_imperial && s_last_ok_ms != 0 &&
+      (now - s_last_ok_ms) < config::kWeatherStaleMs) {
     return;
   }
   s_req_lat = services::map_center::latitude();

@@ -44,14 +44,19 @@ void setUseImperial(bool imperial);
 bool saveUnitsFromForm(const char* units);
 
 /** Kick a background fetch. With force=false it only fetches when the cache is
- *  missing or older than config::kWeatherStaleMs (and no fetch is already in
- *  flight). Safe to call every loop while a weather-bearing screen is open. */
+ *  missing, older than config::kWeatherStaleMs, the map center moved, or the
+ *  local calendar day rolled over (and no fetch is already in flight). Safe to
+ *  call every loop while a weather-bearing screen is open. */
 void requestRefresh(bool force);
 
 /** Call when the clock or forecast screen opens: cancel a queued ADS-B poll so
  * the shared TLS worker can run weather immediately, and force-fetch when we
- * have no cached data yet. */
+ * have no cached data yet or the map center changed. */
 void requestOnScreenOpen();
+
+/** Call after the radar map center is saved to a new location. Invalidates
+ *  weather cached for the previous coordinates and queues a refresh. */
+void notifyLocationChanged();
 
 bool fetchInProgress();
 /** True when a background fetch has staged fresh data awaiting processReady(). */
