@@ -62,6 +62,8 @@ unsigned long g_last_tls_proactive_refresh_ms = 0;
 unsigned long g_last_radar_frame_ms = 0;
 unsigned long g_last_sweep_done_ms = 0;
 unsigned long g_secondary_activity_ms = 0;
+unsigned long g_clock_weather_activity_ms = 0;
+bool g_auto_idle_clock = false;
 unsigned long g_boot_details_until_ms = 0;
 uint32_t g_last_clock_minute_stamp = UINT32_MAX;
 unsigned long g_last_heap_log_ms = 0;
@@ -180,6 +182,10 @@ bool adsbFetchScreenActive() {
   if (g_screen == AppScreen::FlightDetail) {
     return true;
   }
+  if (g_auto_idle_clock &&
+      (g_screen == AppScreen::Clock || g_screen == AppScreen::Weather)) {
+    return true;
+  }
   return bootDetailsActive();
 }
 
@@ -213,6 +219,8 @@ void noteSecondaryActivity() {
     g_secondary_activity_ms = millis();
   }
 }
+
+void noteClockWeatherActivity() { g_clock_weather_activity_ms = millis(); }
 
 void releaseHttpsPressureMemory() {
   ui::flightDetailReleaseSprite();
@@ -366,6 +374,7 @@ void showClock() {
   ui::clockScreenDraw();
   g_radar_visible = false;
   g_last_clock_minute_stamp = services::clock::localMinuteStamp();
+  noteClockWeatherActivity();
 }
 
 void showClockSettings() {
@@ -379,6 +388,7 @@ void showWeather() {
   services::weather::requestOnScreenOpen();
   ui::weatherScreenDraw();
   g_radar_visible = false;
+  noteClockWeatherActivity();
 }
 
 void showDetails(bool boot_splash = false) {
@@ -425,6 +435,7 @@ void applySettingsLive() {
 }
 
 void returnToRadar(bool from_idle_timeout = false) {
+  g_auto_idle_clock = false;
   if (g_screen == AppScreen::Clock || g_screen == AppScreen::Weather) {
     services::weather_icon::releaseBuffer();
   }
@@ -464,9 +475,17 @@ void openSettingsFromRadar() {
 }
 
 void openClockFromRadar() {
+  g_auto_idle_clock = false;
   g_screen = AppScreen::Clock;
   showClock();
   Serial.println("Screen: clock");
+}
+
+void openClockFromIdleRadar() {
+  g_auto_idle_clock = true;
+  g_screen = AppScreen::Clock;
+  showClock();
+  Serial.println("Screen: clock (idle)");
 }
 
 void openDetailsFromRadar() {
@@ -549,6 +568,10 @@ void handleNavigation() {
       g_screen != AppScreen::Clock && g_screen != AppScreen::Weather) {
     noteSecondaryActivity();
   }
+  if (swipe != SwipeNone &&
+      (g_screen == AppScreen::Clock || g_screen == AppScreen::Weather)) {
+    noteClockWeatherActivity();
+  }
   if (swipe == SwipeDown && g_screen == AppScreen::Radar) {
     openClockFromRadar();
   } else if (swipe == SwipeUp && g_screen == AppScreen::Radar) {
@@ -620,8 +643,14 @@ void tickSecondaryScreenTimeout() {
   if (bootDetailsActive()) {
     return;
   }
-  if (g_screen == AppScreen::Radar || g_screen == AppScreen::Clock ||
-      g_screen == AppScreen::Weather) {
+  if (g_screen == AppScreen::Clock || g_screen == AppScreen::Weather) {
+    const unsigned long timeout_ms = ui::displayPrefsClockWeatherTimeoutMs();
+    if (timeout_ms != 0 && millis() - g_clock_weather_activity_ms >= timeout_ms) {
+      returnToRadar(true);
+    }
+    return;
+  }
+  if (g_screen == AppScreen::Radar) {
     return;
   }
   if (g_screen == AppScreen::FlightDetail) {
@@ -640,6 +669,29 @@ void tickSecondaryScreenTimeout() {
     } else {
       returnToRadar(true);
     }
+  }
+}
+
+void tickAutoIdleClock() {
+  if (bootDetailsActive()) {
+    return;
+  }
+  if (g_screen == AppScreen::FlightDetail || g_screen == AppScreen::Settings ||
+      g_screen == AppScreen::Details || g_screen == AppScreen::ClockSettings) {
+    return;
+  }
+
+  const size_t ac = services::adsb::aircraftCount();
+
+  if (g_auto_idle_clock && ac > 0 &&
+      (g_screen == AppScreen::Clock || g_screen == AppScreen::Weather)) {
+    returnToRadar(false);
+    Serial.println("Screen: radar (aircraft)");
+    return;
+  }
+
+  if (!g_auto_idle_clock && g_screen == AppScreen::Radar && g_radar_visible && ac == 0) {
+    openClockFromIdleRadar();
   }
 }
 
@@ -1021,6 +1073,7 @@ void loop() {
   hardware::buzzerPoll();
   tickBootDetailsSplash();
   tickSecondaryScreenTimeout();
+  tickAutoIdleClock();
   tickClockDisplay();
   tickWeather();
   handleInput();
@@ -1085,6 +1138,9 @@ void loop() {
         }
       }
     } else if (g_screen == AppScreen::FlightDetail) {
+      tickAdsbFetch();
+    } else if (g_auto_idle_clock &&
+               (g_screen == AppScreen::Clock || g_screen == AppScreen::Weather)) {
       tickAdsbFetch();
     }
   }

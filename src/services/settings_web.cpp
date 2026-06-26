@@ -210,6 +210,25 @@ void handleSettingsPage() {
     used += static_cast<size_t>(detail_n);
   }
 
+  const unsigned long clock_ms = ui::displayPrefsClockWeatherTimeoutMs();
+  const unsigned long clock_sec = clock_ms / 1000UL;
+  const int clock_n = snprintf(
+      page + used, kSettingsPageCap - used,
+      "<label for=\"clock_timeout\">Clock / forecast screen</label>"
+      "<select id=\"clock_timeout\" name=\"clock_timeout\">"
+      "<option value=\"0\"%s>Manual (swipe away)</option>"
+      "<option value=\"5\"%s>5 seconds</option>"
+      "<option value=\"10\"%s>10 seconds</option>"
+      "<option value=\"15\"%s>15 seconds</option>"
+      "</select>",
+      clock_sec == 0 ? " selected" : "",
+      clock_sec == 5 ? " selected" : "",
+      clock_sec == 10 ? " selected" : "",
+      clock_sec == 15 ? " selected" : "");
+  if (clock_n > 0) {
+    used += static_cast<size_t>(clock_n);
+  }
+
   const uint8_t bright = hardware::displayBrightnessPercent();
   const int bright_n = snprintf(
       page + used, kSettingsPageCap - used,
@@ -487,6 +506,7 @@ void handleSave() {
 
   services::apikeys::saveWeatherKeyFromForm(s_server->arg("weather_key").c_str());
   services::weather::saveUnitsFromForm(s_server->arg("weather_units").c_str());
+  ui::displayPrefsSaveClockWeatherTimeoutFromForm(s_server->arg("clock_timeout").c_str());
 
   Serial.printf("Settings web save (lat/lon %s)\n", loc_ok ? "ok" : "invalid");
 

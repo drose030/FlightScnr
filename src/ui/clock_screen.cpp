@@ -11,6 +11,7 @@
 #include "services/weather.h"
 #include "services/weather_icon.h"
 #include "ui/radar_theme.h"
+#include "ui/temp_label.h"
 
 namespace ui {
 namespace {
@@ -114,41 +115,64 @@ void drawTimeWithAmPm(int* y, const char* time_line, const char* ampm_line, uint
   *y += time_h + kLineGap;
 }
 
-// Visible width of "<value>°<unit>" with the degree drawn as a small ring.
-constexpr int kDegGap1 = 4;
-constexpr int kDegGap2 = 3;
-
-// Degree-ring radius scales with the font so it reads as a degree mark, not a dot.
-int degRingRadius(int temp_h) {
-  return temp_h >= 48 ? 7 : (temp_h >= 30 ? 5 : (temp_h >= 22 ? 4 : 3));
-}
-
 int tempVisibleWidth(UiTextStyle style, int value, char unit) {
-  char num[8];
-  snprintf(num, sizeof(num), "%d", value);
-  char us[2] = {unit, '\0'};
-  displayFontApply(tft, style);
-  const int r = degRingRadius(displayFontHeight(tft, style));
-  return tft.textWidth(num) + kDegGap1 + (2 * r + 1) + kDegGap2 + tft.textWidth(us);
+  return temp_label::visibleWidth(style, value, unit);
 }
 
-// Draw "<value>°<unit>" with top-left at (x, top_y); returns width drawn.
 int drawTempAt(int x, int top_y, int value, char unit, UiTextStyle style, uint16_t fg,
                uint16_t bg) {
-  char num[8];
-  snprintf(num, sizeof(num), "%d", value);
-  char us[2] = {unit, '\0'};
-  displayFontApply(tft, style);
-  const int numw = tft.textWidth(num);
-  const int uw = tft.textWidth(us);
-  const int r = degRingRadius(displayFontHeight(tft, style));
-  const int ringw = 2 * r + 1;
+  return temp_label::drawAt(x, top_y, value, unit, style, fg, bg);
+}
+
+void drawSunGroup(int cx, bool sunset, const char* time_str, int y, uint16_t fg,
+                  uint16_t bg) {
+  const int icon = services::weather_icon::sunIconSize();
+  displayFontApply(tft, displayFontDetail());
+  const int text_w = tft.textWidth(time_str);
+  const int text_h = displayFontHeight(tft, displayFontDetail());
+  constexpr int kGap = 4;
+  const int total = icon + kGap + text_w;
+  const int left = cx - total / 2;
+
+  services::weather_icon::drawSunIcon(tft, sunset, static_cast<int16_t>(left + icon / 2),
+                                      static_cast<int16_t>(y), bg);
   tft.setTextDatum(TextDatum::TopLeft);
   tft.setTextColor(fg, bg);
-  tft.drawString(num, x, top_y);
-  tft.drawCircle(x + numw + kDegGap1 + r, top_y + r + 3, r, fg);
-  tft.drawString(us, x + numw + kDegGap1 + ringw + kDegGap2, top_y);
-  return numw + kDegGap1 + ringw + kDegGap2 + uw;
+  tft.drawString(time_str, left + icon + kGap, y + (icon - text_h) / 2);
+}
+
+int sunRowHeight() {
+  if (!services::weather::hasData()) {
+    return 0;
+  }
+  const services::weather::WeatherData& wx = services::weather::data();
+  if (wx.sunrise_epoch <= 0 && wx.sunset_epoch <= 0) {
+    return 0;
+  }
+  if (services::weather_icon::hasSunIcons()) {
+    return services::weather_icon::sunIconSize() + kLineGap;
+  }
+  return displayFontHeight(tft, displayFontDetail()) + kLineGap;
+}
+
+void drawSunRow(int* y, uint16_t dim, uint16_t bg) {
+  const services::weather::WeatherData& wx = services::weather::data();
+  if (wx.sunrise_epoch <= 0 && wx.sunset_epoch <= 0) {
+    return;
+  }
+  char sr[12];
+  char ss[12];
+  services::clock::formatClockFromEpoch(wx.sunrise_epoch, sr, sizeof(sr));
+  services::clock::formatClockFromEpoch(wx.sunset_epoch, ss, sizeof(ss));
+  if (services::weather_icon::hasSunIcons()) {
+    drawSunGroup(kCenterX - 82, false, sr, *y, dim, bg);
+    drawSunGroup(kCenterX + 82, true, ss, *y, dim, bg);
+    *y += services::weather_icon::sunIconSize() + kLineGap;
+    return;
+  }
+  char line[40];
+  snprintf(line, sizeof(line), "Sun %s  -  %s", sr, ss);
+  drawCenterLine(line, y, displayFontDetail(), dim, bg);
 }
 
 int currentWeatherRowHeight() {
@@ -159,6 +183,18 @@ int currentWeatherRowHeight() {
       services::weather_icon::iconHeight(services::weather::currentIconCode());
   const int temp_h = displayFontHeight(tft, displayFontClockTime());
   return (icon_h > temp_h ? icon_h : temp_h);
+}
+
+int weatherBlockHeight() {
+  if (!services::weather::hasData()) {
+    return 0;
+  }
+  int h = currentWeatherRowHeight();
+  const int sun_h = sunRowHeight();
+  if (sun_h > 0) {
+    h += kSectionGap + sun_h;
+  }
+  return h + kSectionGap;
 }
 
 void drawCurrentWeatherRow(int* y, uint16_t temp_fg, uint16_t bg) {
@@ -210,7 +246,7 @@ void clockScreenDraw() {
   const int detail_h = displayFontHeight(tft, displayFontDetail());
   const int hints_h = detail_h * 3 + kLineGap * 2 + kHintsTopGap;
   const bool show_weather = services::weather::hasData();
-  const int weather_h = show_weather ? currentWeatherRowHeight() + kSectionGap : 0;
+  const int weather_h = show_weather ? weatherBlockHeight() : 0;
   const int block_h = time_h + kTimeDateGap + date_h + tz_h + weather_h + hints_h;
 
   tft.fillScreen(bg);
@@ -230,6 +266,10 @@ void clockScreenDraw() {
   if (show_weather) {
     y += kSectionGap;
     drawCurrentWeatherRow(&y, fg, bg);
+    if (sunRowHeight() > 0) {
+      y += kSectionGap - kLineGap;
+      drawSunRow(&y, hint_fg, bg);
+    }
   }
 
   y += kHintsTopGap;

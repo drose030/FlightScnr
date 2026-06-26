@@ -42,6 +42,7 @@ enum class DisplayAdjustRow : uint8_t {
   Compass,
   Sweep,
   DetailTimeout,
+  ClockTimeout,
   BeepOn,
   BeepTone,
 };
@@ -175,8 +176,9 @@ void buildMainStrings(char* ip_line, size_t ip_len, char* wifi_line, size_t wifi
 void buildDisplayStrings(char* bright_line, size_t bright_len, char* units_line,
                          size_t units_len, char* compass_line, size_t compass_len,
                          char* sweep_line, size_t sweep_len, char* detail_line,
-                         size_t detail_len, char* beep_line, size_t beep_len,
-                         char* beep_tone_line, size_t beep_tone_len) {
+                         size_t detail_len, char* clock_line, size_t clock_len,
+                         char* beep_line, size_t beep_len, char* beep_tone_line,
+                         size_t beep_tone_len) {
   snprintf(bright_line, bright_len, "Brightness: %u%%",
            static_cast<unsigned>(hardware::displayBrightnessPercent()));
   snprintf(units_line, units_len, "Units: %s", ui::radar::distanceUnitLabel());
@@ -186,6 +188,8 @@ void buildDisplayStrings(char* bright_line, size_t bright_len, char* units_line,
            ui::displayPrefsSweepLineEnabled() ? "on" : "off");
   snprintf(detail_line, detail_len, "Flight Detail: %s",
            ui::displayPrefsFlightDetailTimeoutLabel());
+  snprintf(clock_line, clock_len, "Clock/Forecast: %s",
+           ui::displayPrefsClockWeatherTimeoutLabel());
   snprintf(beep_line, beep_len, "UI Beep: %s",
            hardware::buzzerEnabled() ? "on" : "off");
   snprintf(beep_tone_line, beep_tone_len, "Beep Tone: %c",
@@ -291,12 +295,13 @@ void drawDisplayPage(uint16_t bg, uint16_t fg, uint16_t label_fg, uint16_t hint_
   char compass_line[28];
   char sweep_line[24];
   char detail_line[28];
+  char clock_line[28];
   char beep_line[24];
   char beep_tone_line[28];
   buildDisplayStrings(bright_line, sizeof(bright_line), units_line, sizeof(units_line),
                       compass_line, sizeof(compass_line), sweep_line, sizeof(sweep_line),
-                      detail_line, sizeof(detail_line), beep_line, sizeof(beep_line),
-                      beep_tone_line, sizeof(beep_tone_line));
+                      detail_line, sizeof(detail_line), clock_line, sizeof(clock_line),
+                      beep_line, sizeof(beep_line), beep_tone_line, sizeof(beep_tone_line));
 
   const uint16_t active_fg = settingsActiveFg();
   const uint16_t bright_fg =
@@ -309,6 +314,8 @@ void drawDisplayPage(uint16_t bg, uint16_t fg, uint16_t label_fg, uint16_t hint_
       (s_display_focus == DisplayAdjustRow::Sweep) ? active_fg : label_fg;
   const uint16_t detail_fg =
       (s_display_focus == DisplayAdjustRow::DetailTimeout) ? active_fg : label_fg;
+  const uint16_t clock_fg =
+      (s_display_focus == DisplayAdjustRow::ClockTimeout) ? active_fg : label_fg;
   const uint16_t beep_fg =
       (s_display_focus == DisplayAdjustRow::BeepOn) ? active_fg : label_fg;
   const uint16_t beep_tone_fg =
@@ -321,6 +328,7 @@ void drawDisplayPage(uint16_t bg, uint16_t fg, uint16_t label_fg, uint16_t hint_
       {compass_line, displayFontBody(), compass_fg},
       {sweep_line, displayFontBody(), sweep_fg},
       {detail_line, displayFontBody(), detail_fg},
+      {clock_line, displayFontBody(), clock_fg},
       {beep_line, displayFontBody(), beep_fg},
       {beep_tone_line, displayFontBody(), beep_tone_fg},
   };
@@ -422,6 +430,9 @@ void infoScreenCycleDisplayFocus() {
       s_display_focus = DisplayAdjustRow::DetailTimeout;
       break;
     case DisplayAdjustRow::DetailTimeout:
+      s_display_focus = DisplayAdjustRow::ClockTimeout;
+      break;
+    case DisplayAdjustRow::ClockTimeout:
       s_display_focus = DisplayAdjustRow::BeepOn;
       break;
     case DisplayAdjustRow::BeepOn:
@@ -488,6 +499,9 @@ void infoScreenHandleKnob(int8_t delta) {
       break;
     case DisplayAdjustRow::DetailTimeout:
       ui::displayPrefsFlightDetailTimeoutStep(delta);
+      break;
+    case DisplayAdjustRow::ClockTimeout:
+      ui::displayPrefsClockWeatherTimeoutStep(delta);
       break;
     case DisplayAdjustRow::BeepOn:
       hardware::buzzerSetEnabled(!hardware::buzzerEnabled());

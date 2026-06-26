@@ -13,6 +13,7 @@
 #include "services/weather.h"
 #include "services/weather_icon.h"
 #include "ui/radar_theme.h"
+#include "ui/temp_label.h"
 
 namespace ui {
 namespace {
@@ -32,28 +33,10 @@ void drawCentered(const char* text, int y, UiTextStyle style, uint16_t fg, uint1
   drawCenteredAt(text, kCenterX, y, style, fg, bg);
 }
 
-// Draw "<value>°<unit>" centered at cx (top at top_y); ° is a small drawn ring.
+// Draw "<value>°<unit>" centered at cx (top at top_y).
 void drawTempCentered(int cx, int top_y, int value, char unit, UiTextStyle style,
                       uint16_t fg, uint16_t bg) {
-  char num[8];
-  snprintf(num, sizeof(num), "%d", value);
-  char us[2] = {unit, '\0'};
-
-  displayFontApply(tft, style);
-  const int numw = tft.textWidth(num);
-  const int uw = tft.textWidth(us);
-  constexpr int r = 3;
-  constexpr int gap1 = 3;
-  constexpr int gap2 = 2;
-  const int ringw = 2 * r + 1;
-  const int total = numw + gap1 + ringw + gap2 + uw;
-
-  const int x = cx - total / 2;
-  tft.setTextDatum(TextDatum::TopLeft);
-  tft.setTextColor(fg, bg);
-  tft.drawString(num, x, top_y);
-  tft.drawCircle(x + numw + gap1 + r, top_y + r + 2, r, fg);
-  tft.drawString(us, x + numw + gap1 + ringw + gap2, top_y);
+  temp_label::drawCentered(cx, top_y, value, unit, style, fg, bg);
 }
 
 void weekdayLabel(int64_t date_epoch, int index, char* out, size_t len) {
@@ -70,24 +53,6 @@ void weekdayLabel(int64_t date_epoch, int index, char* out, size_t len) {
   struct tm t {};
   gmtime_r(&local, &t);
   strftime(out, len, "%a", &t);
-}
-
-// Draw a [icon][gap][time] group horizontally centered at cx, icon top at y.
-void drawSunGroup(int cx, bool sunset, const char* time_str, int y, uint16_t fg,
-                  uint16_t bg) {
-  const int icon = services::weather_icon::sunIconSize();
-  displayFontApply(tft, displayFontDetail());
-  const int text_w = tft.textWidth(time_str);
-  const int text_h = displayFontHeight(tft, displayFontDetail());
-  constexpr int kGap = 4;
-  const int total = icon + kGap + text_w;
-  const int left = cx - total / 2;
-
-  services::weather_icon::drawSunIcon(tft, sunset, static_cast<int16_t>(left + icon / 2),
-                                      static_cast<int16_t>(y), bg);
-  tft.setTextDatum(TextDatum::TopLeft);
-  tft.setTextColor(fg, bg);
-  tft.drawString(time_str, left + icon + kGap, y + (icon - text_h) / 2);
 }
 
 void drawForecast(const services::weather::WeatherData& wx, uint16_t fg, uint16_t dim,
@@ -114,23 +79,6 @@ void drawForecast(const services::weather::WeatherData& wx, uint16_t fg, uint16_
                      displayFontBody(), fg, bg);
     drawTempCentered(cx, kLoY, static_cast<int>(lroundf(d.temp_min)), unit,
                      displayFontDetail(), dim, bg);
-  }
-
-  // Sunrise / sunset row: icon + time for each, split across the two halves.
-  if (wx.sunrise_epoch > 0 || wx.sunset_epoch > 0) {
-    char sr[12];
-    char ss[12];
-    services::clock::formatClockFromEpoch(wx.sunrise_epoch, sr, sizeof(sr));
-    services::clock::formatClockFromEpoch(wx.sunset_epoch, ss, sizeof(ss));
-    constexpr int kSunRowY = 276;
-    if (services::weather_icon::hasSunIcons()) {
-      drawSunGroup(kCenterX - 82, false, sr, kSunRowY, dim, bg);
-      drawSunGroup(kCenterX + 82, true, ss, kSunRowY, dim, bg);
-    } else {
-      char line[40];
-      snprintf(line, sizeof(line), "Sun %s  -  %s", sr, ss);
-      drawCentered(line, kSunRowY + 8, displayFontDetail(), dim, bg);
-    }
   }
 }
 
