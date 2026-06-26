@@ -20,13 +20,13 @@ const data::weather_icons::IconBlob* findIconBlob(int code) {
   if (code <= 0 || data::weather_icons::kCount == 0) {
     return nullptr;
   }
-  const uint16_t key = static_cast<uint16_t>(code);
+  const uint32_t key = static_cast<uint32_t>(code);
   size_t lo = 0;
   size_t hi = data::weather_icons::kCount;
   while (lo < hi) {
     const size_t mid = lo + (hi - lo) / 2;
     const data::weather_icons::Entry* entry = &data::weather_icons::kEntries[mid];
-    const uint16_t c = static_cast<uint16_t>(pgm_read_word(&entry->code));
+    const uint32_t c = static_cast<uint32_t>(pgm_read_dword(&entry->code));
     if (c == key) {
       return reinterpret_cast<const data::weather_icons::IconBlob*>(
           pgm_read_ptr(&entry->icon));

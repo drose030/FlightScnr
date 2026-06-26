@@ -72,10 +72,10 @@ void drawForecast(const services::weather::WeatherData& wx, uint16_t fg, uint16_
   const char unit = wx.imperial ? 'F' : 'C';
   const int col_centers[services::weather::kForecastDays] = {kCenterX - 110, kCenterX,
                                                              kCenterX + 110};
-  constexpr int kLabelY = 96;
-  constexpr int kIconY = 124;
-  constexpr int kHiY = 204;
-  constexpr int kLoY = 232;
+  constexpr int kLabelY = 92;
+  constexpr int kIconY = 116;
+  constexpr int kHiY = 220;
+  constexpr int kLoY = 248;
 
   for (int i = 0; i < services::weather::kForecastDays; ++i) {
     const services::weather::DayForecast& d = wx.days[i];
