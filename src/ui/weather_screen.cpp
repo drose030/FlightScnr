@@ -20,11 +20,16 @@ namespace {
 const int kCenterX = config::kDisplayWidth / 2;
 const int kCenterY = config::kDisplayHeight / 2;
 
-void drawCentered(const char* text, int y, UiTextStyle style, uint16_t fg, uint16_t bg) {
+void drawCenteredAt(const char* text, int cx, int y, UiTextStyle style, uint16_t fg,
+                    uint16_t bg) {
   displayFontApply(tft, style);
   tft.setTextDatum(TextDatum::TopCenter);
   tft.setTextColor(fg, bg);
-  tft.drawString(text, kCenterX, y);
+  tft.drawString(text, cx, y);
+}
+
+void drawCentered(const char* text, int y, UiTextStyle style, uint16_t fg, uint16_t bg) {
+  drawCenteredAt(text, kCenterX, y, style, fg, bg);
 }
 
 // Draw "<value>°<unit>" centered at cx (top at top_y); ° is a small drawn ring.
@@ -67,15 +72,33 @@ void weekdayLabel(int64_t date_epoch, int index, char* out, size_t len) {
   strftime(out, len, "%a", &t);
 }
 
+// Draw a [icon][gap][time] group horizontally centered at cx, icon top at y.
+void drawSunGroup(int cx, bool sunset, const char* time_str, int y, uint16_t fg,
+                  uint16_t bg) {
+  const int icon = services::weather_icon::sunIconSize();
+  displayFontApply(tft, displayFontDetail());
+  const int text_w = tft.textWidth(time_str);
+  const int text_h = displayFontHeight(tft, displayFontDetail());
+  constexpr int kGap = 4;
+  const int total = icon + kGap + text_w;
+  const int left = cx - total / 2;
+
+  services::weather_icon::drawSunIcon(tft, sunset, static_cast<int16_t>(left + icon / 2),
+                                      static_cast<int16_t>(y), bg);
+  tft.setTextDatum(TextDatum::TopLeft);
+  tft.setTextColor(fg, bg);
+  tft.drawString(time_str, left + icon + kGap, y + (icon - text_h) / 2);
+}
+
 void drawForecast(const services::weather::WeatherData& wx, uint16_t fg, uint16_t dim,
                   uint16_t accent, uint16_t bg) {
   const char unit = wx.imperial ? 'F' : 'C';
   const int col_centers[services::weather::kForecastDays] = {kCenterX - 110, kCenterX,
                                                              kCenterX + 110};
-  constexpr int kLabelY = 92;
-  constexpr int kIconY = 116;
-  constexpr int kHiY = 220;
-  constexpr int kLoY = 248;
+  constexpr int kLabelY = 86;
+  constexpr int kIconY = 108;
+  constexpr int kHiY = 212;
+  constexpr int kLoY = 240;
 
   for (int i = 0; i < services::weather::kForecastDays; ++i) {
     const services::weather::DayForecast& d = wx.days[i];
@@ -85,7 +108,7 @@ void drawForecast(const services::weather::WeatherData& wx, uint16_t fg, uint16_
     const int cx = col_centers[i];
     char label[12];
     weekdayLabel(d.date_epoch, i, label, sizeof(label));
-    drawCentered(label, kLabelY, displayFontDetail(), i == 0 ? accent : fg, bg);
+    drawCenteredAt(label, cx, kLabelY, displayFontDetail(), i == 0 ? accent : fg, bg);
     services::weather_icon::drawIcon(tft, services::weather::dayIconCode(i), cx, kIconY, bg);
     drawTempCentered(cx, kHiY, static_cast<int>(lroundf(d.temp_max)), unit,
                      displayFontBody(), fg, bg);
@@ -93,15 +116,21 @@ void drawForecast(const services::weather::WeatherData& wx, uint16_t fg, uint16_
                      displayFontDetail(), dim, bg);
   }
 
-  // Sunrise / sunset row.
+  // Sunrise / sunset row: icon + time for each, split across the two halves.
   if (wx.sunrise_epoch > 0 || wx.sunset_epoch > 0) {
     char sr[12];
     char ss[12];
     services::clock::formatClockFromEpoch(wx.sunrise_epoch, sr, sizeof(sr));
     services::clock::formatClockFromEpoch(wx.sunset_epoch, ss, sizeof(ss));
-    char line[40];
-    snprintf(line, sizeof(line), "Sun %s  -  %s", sr, ss);
-    drawCentered(line, 296, displayFontDetail(), dim, bg);
+    constexpr int kSunRowY = 276;
+    if (services::weather_icon::hasSunIcons()) {
+      drawSunGroup(kCenterX - 82, false, sr, kSunRowY, dim, bg);
+      drawSunGroup(kCenterX + 82, true, ss, kSunRowY, dim, bg);
+    } else {
+      char line[40];
+      snprintf(line, sizeof(line), "Sun %s  -  %s", sr, ss);
+      drawCentered(line, kSunRowY + 8, displayFontDetail(), dim, bg);
+    }
   }
 }
 

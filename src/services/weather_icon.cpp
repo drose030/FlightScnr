@@ -133,8 +133,8 @@ int iconHeight(int code) {
   return blob == nullptr ? 0 : static_cast<int>(pgm_read_word(&blob->h));
 }
 
-bool drawIcon(PlaneGfx& tft, int code, int16_t center_x, int16_t y, uint16_t bg) {
-  const data::weather_icons::IconBlob* blob = findIconBlob(code);
+bool drawBlob(PlaneGfx& tft, const data::weather_icons::IconBlob* blob, int16_t center_x,
+              int16_t y, uint16_t bg) {
   if (blob == nullptr || !decodeGifToFrame(blob)) {
     return false;
   }
@@ -150,6 +150,27 @@ bool drawIcon(PlaneGfx& tft, int code, int16_t center_x, int16_t y, uint16_t bg)
   const int16_t x = static_cast<int16_t>(center_x - w / 2);
   tft.draw16bitRGBBitmap(x, y, s_frame, static_cast<int16_t>(w), static_cast<int16_t>(h));
   return true;
+}
+
+bool drawIcon(PlaneGfx& tft, int code, int16_t center_x, int16_t y, uint16_t bg) {
+  return drawBlob(tft, findIconBlob(code), center_x, y, bg);
+}
+
+bool hasSunIcons() { return data::weather_icons::kHasSunIcons; }
+
+int sunIconSize() {
+  return data::weather_icons::kHasSunIcons
+             ? static_cast<int>(pgm_read_word(&data::weather_icons::kBlob_sunrise.w))
+             : 0;
+}
+
+bool drawSunIcon(PlaneGfx& tft, bool sunset, int16_t center_x, int16_t y, uint16_t bg) {
+  if (!data::weather_icons::kHasSunIcons) {
+    return false;
+  }
+  const data::weather_icons::IconBlob* blob =
+      sunset ? &data::weather_icons::kBlob_sunset : &data::weather_icons::kBlob_sunrise;
+  return drawBlob(tft, blob, center_x, y, bg);
 }
 
 void releaseBuffer() {
