@@ -1026,12 +1026,16 @@ IntRect aircraftMarkerBounds(int x, int y, const services::adsb::Aircraft& plane
   int min_y = y - symbol_half - kPad;
   int max_y = y + symbol_half + kPad;
 
-  if (x < radar::kCenterX) {
-    max_x = std::max(max_x, x + symbol_half + radar::kAircraftLabelGapPx + kPad);
-    min_x = std::min(min_x, x - symbol_half - block_w - radar::kAircraftLabelGapPx - kPad);
+  // The tag side MUST match drawAircraftTag(): the label is drawn to the right
+  // of the symbol when it sits left of center, otherwise to the left. Reserving
+  // block_w on the wrong side leaves the label outside this dirty rect, so its
+  // old text ghosts on the panel until the rotating sweep happens to repaint
+  // that region from the content sprite.
+  const bool tag_on_right = x < radar::kCenterX;
+  if (tag_on_right) {
+    max_x = std::max(max_x, x + symbol_half + radar::kAircraftLabelGapPx + block_w + kPad);
   } else {
-    min_x = std::min(min_x, x - symbol_half - block_w - radar::kAircraftLabelGapPx - kPad);
-    max_x = std::max(max_x, x + symbol_half + radar::kAircraftLabelGapPx + kPad);
+    min_x = std::min(min_x, x - symbol_half - radar::kAircraftLabelGapPx - block_w - kPad);
   }
   min_y = std::min(min_y, y - block_h / 2 - kPad);
   max_y = std::max(max_y, y + block_h / 2 + kPad);
@@ -1319,13 +1323,40 @@ void radarDisplayRefreshAircraft() {
   if (!s_bg_ready) {
     rebuildBackgroundSprite();
   }
-  ensureContentSprite();
-  s_aircraft_dirty = true;
-  s_aircraft_dirty_rect = dirty;
 
-  if (config::kRadarSweepTraceDebug) {
-    Serial.println("[sweep] aircraft_refresh deferred");
+  // Apply the aircraft change to the panel immediately so blips track the ADS-B
+  // poll (~2s) instead of only refreshing where the rotating sweep line happens
+  // to cross them. If the offscreen content sprite is unavailable (low heap),
+  // fall back to the deferred flag consumed by radarDisplayRefreshSweep().
+  if (!ensureContentSprite() || !rebuildContentBase()) {
+    s_aircraft_dirty = true;
+    s_aircraft_dirty_rect = dirty;
+    if (config::kRadarSweepTraceDebug) {
+      Serial.println("[sweep] aircraft_refresh deferred (no content sprite)");
+    }
+    return;
   }
+
+  PanelSession panel(tft);
+  // Clear the prior sweep spoke from the panel so it isn't orphaned by our blit;
+  // the sweep redraws on the next animation frame.
+  if (s_sweep_track_valid && !rectEmpty(s_prev_sweep_dirty)) {
+    blitRegionToPanel(s_prev_sweep_dirty);
+  }
+
+  IntRect patch = clampRectToScreen(dirty);
+  constexpr int kScreenPixels = radar::kSize * radar::kSize;
+  if (patch.w * patch.h >= kScreenPixels / 3) {
+    s_content.pushSprite(0, 0);
+  } else {
+    blitRegionToPanel(patch);
+  }
+  tft.setTextDatum(TextDatum::TopLeft);
+
+  s_sweep_track_valid = false;
+  savePrevAircraftMarkers();
+  s_aircraft_dirty = false;
+  s_aircraft_dirty_rect = {};
 }
 
 size_t radarDisplayInRangeAircraftCount() { return inRangeAircraftCount(); }
