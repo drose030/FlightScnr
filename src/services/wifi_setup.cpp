@@ -641,7 +641,11 @@ struct PortalScanEntry {
   int32_t rssi;
 };
 constexpr size_t kPortalScanMax = 12;
-constexpr unsigned long kPortalScanCacheMs = 30000UL;
+// Long enough to survive a whole setup session: a scan blocks the portal for
+// ~8 s, and 30 s went stale while the user was still clicking through the
+// pages, so every return to the list paid for a new scan. Nearby networks do
+// not change during setup, and the Rescan link covers the cases where they do.
+constexpr unsigned long kPortalScanCacheMs = 300000UL;
 PortalScanEntry s_portal_scan[kPortalScanMax];
 size_t s_portal_scan_count = 0;
 unsigned long s_portal_scan_ms = 0;  // 0 = never scanned this portal session
