@@ -423,7 +423,11 @@ static const char kPortalRootHtml[] PROGMEM =
     "</style></head><body>"
     "<h1>FlightScnr setup</h1>"
     "<p>Connect this device to Wi&#8209;Fi. Up to 3 networks can be saved.</p>"
-    "<a href=\"/wifi\">Configure Wi&#8209;Fi</a>"
+    // The device blocks while scanning and cannot serve a progress page, so the
+    // busy hint has to be painted by the browser before it navigates away.
+    "<a href=\"/wifi\" onclick=\"document.body.innerHTML="
+    "'<h1>Scanning&#8230;</h1><p>Looking for Wi&#8209;Fi networks. "
+    "This can take up to 10 seconds.</p>'\">Configure Wi&#8209;Fi</a>"
     "<a href=\"/networks\">Saved networks</a>"
     "<a class=\"sec\" href=\"/info\">Info</a>"
     "</body></html>";
@@ -614,7 +618,9 @@ void handlePortalNetworks() {
 
   if (s_nets_count < config::kWifiMaxNetworks) {
     portalAppend(page, &used,
-                 "<p><a class=btn href=/wifi>Add via scan</a></p>"
+                 "<p><a class=btn href=\"/wifi\" onclick=\"document.body.innerHTML="
+                 "'<h1>Scanning&#8230;</h1><p>Looking for Wi-Fi networks. "
+                 "This can take up to 10 seconds.</p>'\">Add via scan</a></p>"
                  "<form method=POST action=/networks/add>"
                  "<label>SSID</label><input name=s maxlength=32 required>"
                  "<label>Password</label><input name=p type=password maxlength=63>"
@@ -624,6 +630,55 @@ void handlePortalNetworks() {
   }
   portalEndPage(page, &used);
   portalSendBuffer(used);
+}
+
+// Cached scan results. A scan blocks the (single-threaded) portal web server
+// for ~8 s, so results are kept for a while instead of rescanning per request:
+// the captive-portal assistants of phones reload the page on their own, and
+// every one of those reloads used to queue behind a fresh scan.
+struct PortalScanEntry {
+  char ssid[33];
+  int32_t rssi;
+};
+constexpr size_t kPortalScanMax = 12;
+constexpr unsigned long kPortalScanCacheMs = 30000UL;
+PortalScanEntry s_portal_scan[kPortalScanMax];
+size_t s_portal_scan_count = 0;
+unsigned long s_portal_scan_ms = 0;  // 0 = never scanned this portal session
+
+bool portalScanFresh() {
+  return s_portal_scan_ms != 0 && millis() - s_portal_scan_ms < kPortalScanCacheMs;
+}
+
+void portalScanRefresh() {
+  // SoftAP-only scan is unreliable; briefly enable STA for the scan.
+  WiFi.mode(WIFI_AP_STA);
+  delay(50);
+  const unsigned long started = millis();
+  const int n = WiFi.scanNetworks(/*async=*/false, /*hidden=*/false);
+
+  s_portal_scan_count = 0;
+  for (int i = 0; i < n && s_portal_scan_count < kPortalScanMax; ++i) {
+    const String ssid = WiFi.SSID(i);
+    if (ssid.length() == 0) {
+      continue;
+    }
+    PortalScanEntry& e = s_portal_scan[s_portal_scan_count];
+    strncpy(e.ssid, ssid.c_str(), sizeof(e.ssid) - 1);
+    e.ssid[sizeof(e.ssid) - 1] = '\0';
+    e.rssi = WiFi.RSSI(i);
+    ++s_portal_scan_count;
+  }
+  // Copy taken — release the driver's result buffers again.
+  WiFi.scanDelete();
+  s_portal_scan_ms = millis();
+  Serial.printf("[wifi] portal scan %d found, %u kept, %lums\n", n,
+                static_cast<unsigned>(s_portal_scan_count), millis() - started);
+}
+
+void portalScanReset() {
+  s_portal_scan_count = 0;
+  s_portal_scan_ms = 0;
 }
 
 void handlePortalWifi() {
@@ -637,18 +692,20 @@ void handlePortalWifi() {
   }
   Serial.printf("[wifi] portal GET /wifi heap=%u\n", ESP.getFreeHeap());
 
-  // SoftAP-only scan is unreliable; briefly enable STA for the scan.
-  WiFi.mode(WIFI_AP_STA);
-  delay(50);
-  const int n = WiFi.scanNetworks(/*async=*/false, /*hidden=*/false);
-
+  // The list carries the SSID itself, so picking one needs no scan at all.
   char picked[33] = "";
-  if (s_active_wm->server->hasArg("i")) {
-    const int idx = s_active_wm->server->arg("i").toInt();
-    if (idx >= 0 && idx < n) {
-      strncpy(picked, WiFi.SSID(idx).c_str(), sizeof(picked) - 1);
-    }
+  if (s_active_wm->server->hasArg("s")) {
+    strncpy(picked, s_active_wm->server->arg("s").c_str(), sizeof(picked) - 1);
   }
+  const bool from_list = picked[0] != '\0';
+  const bool forced = s_active_wm->server->hasArg("rescan");
+
+  // Rescan only when the user asked for it, or when the cache cannot serve the
+  // page. Picking an SSID renders from whatever is cached, however stale.
+  if (forced || s_portal_scan_count == 0 || (!from_list && !portalScanFresh())) {
+    portalScanRefresh();
+  }
+  const int n = static_cast<int>(s_portal_scan_count);
 
   size_t used = 0;
   portalBeginPage(page, &used, "Configure Wi-Fi");
@@ -660,24 +717,30 @@ void handlePortalWifi() {
     portalAppend(page, &used, "<p>No networks found. Enter SSID manually.</p>");
   } else {
     portalAppend(page, &used, "<p class=hint>Tap an SSID to fill the form:</p>");
-    const int show = n > 12 ? 12 : n;
-    for (int i = 0; i < show; ++i) {
+    for (int i = 0; i < n; ++i) {
       char esc[96];
-      char chunk[220];
-      const String ssid = WiFi.SSID(i);
-      if (ssid.length() == 0) {
-        continue;
-      }
-      htmlEscape(ssid.c_str(), esc, sizeof(esc));
+      char chunk[420];
+      const PortalScanEntry& e = s_portal_scan[i];
+      htmlEscape(e.ssid, esc, sizeof(esc));
+      // The SSID travels in the form, so this round-trip needs no rescan.
       snprintf(chunk, sizeof(chunk),
                "<form method=GET action=/wifi style=\"display:inline;margin:0\">"
-               "<input type=hidden name=i value=%d>"
+               "<input type=hidden name=s value=\"%s\">"
                "<button type=submit class=sec>%s (%d)</button></form> ",
-               i, esc, WiFi.RSSI(i));
+               esc, esc, static_cast<int>(e.rssi));
       portalAppend(page, &used, chunk);
     }
   }
-  WiFi.scanDelete();
+  {
+    char age[320];
+    snprintf(age, sizeof(age),
+             "<p class=hint>List is %lus old. "
+             "<a class=btn href=\"/wifi?rescan=1\" onclick=\"document.body.innerHTML="
+             "'<h1>Scanning&#8230;</h1><p>Looking for Wi-Fi networks. "
+             "This can take up to 10 seconds.</p>'\">Rescan</a></p>",
+             s_portal_scan_ms != 0 ? (millis() - s_portal_scan_ms) / 1000UL : 0UL);
+    portalAppend(page, &used, age);
+  }
 
   char esc_pick[96];
   htmlEscape(picked, esc_pick, sizeof(esc_pick));
@@ -1026,6 +1089,7 @@ bool waitForStaAfterPortal() {
 
 bool openConfigPortal(WiFiManager& wm) {
   prepareWifiForPortal();
+  portalScanReset();
   bootScreenShowPortalHint();
 
   wm.startConfigPortal(config::kPortalApName);
