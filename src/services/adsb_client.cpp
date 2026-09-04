@@ -145,9 +145,33 @@ struct PsramPayload {
 // Read the full HTTP body with explicit connected()/available() waiting. Streaming
 // ArduinoJson straight off the TLS socket is unreliable (momentary gaps look like
 // EOF -> IncompleteInput on large responses), so we buffer first, then filter-parse.
+// Sink that appends whatever HTTPClient writes into the PSRAM payload buffer.
+// Read-side methods are stubs: this is a write-only destination.
+class PsramSink : public Stream {
+ public:
+  explicit PsramSink(PsramPayload* payload) : payload_(payload) {}
+
+  size_t write(uint8_t b) override { return payload_->append(&b, 1) ? 1 : 0; }
+  size_t write(const uint8_t* data, size_t len) override {
+    return payload_->append(data, len) ? len : 0;
+  }
+  int available() override { return 0; }
+  int read() override { return -1; }
+  int peek() override { return -1; }
+  void flush() override {}
+
+ private:
+  PsramPayload* payload_;
+};
+
+// HTTPClient only decodes Transfer-Encoding: chunked when it writes the body
+// itself; pulling getStreamPtr() by hand hands back the raw framing. adsb.fi
+// serves chunked over HTTP/1.1, so the body arrived as
+// "1c91\r\n{\"ac\":[...]}\r\n0\r\n\r\n" and ArduinoJson stopped after the leading
+// hex digit -- a valid JSON number, hence no parse error and an empty radar.
+// Let the library do the de-chunking and sink the decoded body into PSRAM.
 bool readHttpPayload(HTTPClient& http, PsramPayload* payload, uint32_t timeout_ms) {
-  WiFiClient* stream = http.getStreamPtr();
-  if (stream == nullptr || payload == nullptr) {
+  if (payload == nullptr) {
     return false;
   }
   const int content_len = http.getSize();
@@ -155,31 +179,14 @@ bool readHttpPayload(HTTPClient& http, PsramPayload* payload, uint32_t timeout_m
     Serial.printf("[fetch] payload alloc failed (%d bytes)\n", content_len);
     return false;
   }
-  const unsigned long deadline_ms = millis() + timeout_ms;
-  uint8_t buf[512];
-  while (http.connected() || stream->available()) {
-    if (millis() >= deadline_ms) {
-      if (config::kSerialTraceDebug) {
-        Serial.printf("[fetch] http read timeout (%ums)\n", timeout_ms);
-      }
-      return false;
+  http.setTimeout(timeout_ms);
+  PsramSink sink(payload);
+  const int written = http.writeToStream(&sink);
+  if (written < 0) {
+    if (config::kSerialTraceDebug) {
+      Serial.printf("[fetch] http read failed (%d)\n", written);
     }
-    if (stream->available() == 0) {
-      if (!http.connected()) {
-        break;
-      }
-      workerYield();
-      continue;
-    }
-    const size_t n = stream->readBytes(buf, sizeof(buf));
-    if (n == 0) {
-      workerYield();
-      continue;
-    }
-    if (!payload->append(buf, n)) {
-      Serial.println("[fetch] payload alloc failed (grow)");
-      return false;
-    }
+    return false;
   }
   return payload->len > 0;
 }
@@ -724,6 +731,10 @@ void saveAltitudeCeilingFromForm(const char* value) {
 bool parseAircraftDoc(JsonDocument& doc, Aircraft* out, size_t* out_count) {
   JsonArray ac = doc["ac"].as<JsonArray>();
   if (ac.isNull()) {
+    // An empty "ac" array is normal (no traffic); a missing one means the body
+    // was not the response we expect, which otherwise looks exactly like quiet
+    // skies. Say so, so the next such change is visible instead of silent.
+    Serial.println("[adsb] response has no \"ac\" array — unexpected body");
     *out_count = 0;
     return true;
   }
